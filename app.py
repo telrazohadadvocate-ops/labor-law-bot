@@ -1105,6 +1105,14 @@ def generate_docx(data, calculations, claim_text):
         ind = pPr.find(qn('w:ind'))
         if ind is not None:
             pPr.remove(ind)
+        # Compact spacing inside table cells
+        sp = pPr.find(qn('w:spacing'))
+        if sp is None:
+            sp = etree.SubElement(pPr, qn('w:spacing'))
+        sp.set(qn('w:before'), '40')
+        sp.set(qn('w:after'), '40')
+        sp.set(qn('w:line'), '276')
+        sp.set(qn('w:lineRule'), 'auto')
         if text:
             for line_idx, line in enumerate(text.split('\n')):
                 if line_idx > 0:
@@ -1187,19 +1195,19 @@ def generate_docx(data, calculations, claim_text):
             b.set(qn('w:space'), '0')
             b.set(qn('w:color'), 'auto')
 
-        # Fill rows
+        # Fill rows: right col = component name (bold, right-aligned), left col = amount (left-aligned)
         for i, (key, claim) in enumerate(claims_dict.items()):
             set_cell_rtl(tbl.rows[i].cells[0], claim['name'], bold=True, size=12,
                          alignment=WD_ALIGN_PARAGRAPH.RIGHT)
             set_cell_rtl(tbl.rows[i].cells[1], f"{claim['amount']:,.0f} ₪", size=12,
-                         alignment=WD_ALIGN_PARAGRAPH.CENTER)
+                         alignment=WD_ALIGN_PARAGRAPH.LEFT)
 
         # Total row (last)
         last_row = num_rows - 1
         set_cell_rtl(tbl.rows[last_row].cells[0], 'סה"כ', bold=True, size=12,
                      alignment=WD_ALIGN_PARAGRAPH.RIGHT)
         set_cell_rtl(tbl.rows[last_row].cells[1], f"{total_amount:,.0f} ₪", bold=True, size=12,
-                     alignment=WD_ALIGN_PARAGRAPH.CENTER)
+                     alignment=WD_ALIGN_PARAGRAPH.LEFT)
 
         # Shade last row D9E2F3
         for cell in tbl.rows[last_row].cells:
@@ -1230,66 +1238,79 @@ def generate_docx(data, calculations, claim_text):
     # BUILD THE DOCUMENT
     # ══════════════════════════════════════════════════════════════════════
 
-    # ── Court Header Table (top of document) ─────────────────────────────
-    header_table = doc.add_table(rows=4, cols=2)
-    header_table.autofit = True
+    # ── Court Name (centered, bold, at top) ──────────────────────────────
+    add_plain_para(court_name, alignment=WD_ALIGN_PARAGRAPH.CENTER, size=14, bold=True)
 
-    set_cell_rtl(header_table.rows[0].cells[0], 'בס"ד', size=11)
-    set_cell_rtl(header_table.rows[0].cells[1], '', size=11)
-
-    set_cell_rtl(header_table.rows[1].cells[0], court_name, bold=True, size=13,
-                 alignment=WD_ALIGN_PARAGRAPH.CENTER)
-    set_cell_rtl(header_table.rows[1].cells[1], '', size=11)
-    header_table.rows[1].cells[0].merge(header_table.rows[1].cells[1])
-
-    set_cell_rtl(header_table.rows[2].cells[0], 'מהות התביעה: הצהרתית וכספית',
-                 size=11, alignment=WD_ALIGN_PARAGRAPH.CENTER)
-    set_cell_rtl(header_table.rows[2].cells[1], '', size=11)
-    header_table.rows[2].cells[0].merge(header_table.rows[2].cells[1])
-
+    # ── Case nature and amount (centered, RTL) ───────────────────────────
+    add_plain_para('מהות התביעה: הצהרתית וכספית', alignment=WD_ALIGN_PARAGRAPH.CENTER, size=12)
     amount_text = f'סכום התביעה: {total:,.0f} ₪ קרן (לא כולל הצמדה וריבית, שכ"ט עו"ד והוצאות)'
-    set_cell_rtl(header_table.rows[3].cells[0], amount_text,
-                 bold=True, size=11, alignment=WD_ALIGN_PARAGRAPH.CENTER)
-    set_cell_rtl(header_table.rows[3].cells[1], '', size=11)
-    header_table.rows[3].cells[0].merge(header_table.rows[3].cells[1])
+    add_plain_para(amount_text, alignment=WD_ALIGN_PARAGRAPH.CENTER, size=12, bold=True)
 
-    htblPr = _make_table_borderless(header_table)
-    _set_table_bidi(htblPr)
-
-    # ── Header Summary Table (same as end summary, per SKILL.md) ─────────
+    # ── Header Summary Table (financial breakdown) ───────────────────────
     add_plain_para('')
     add_summary_table(claims, total)
-
     add_plain_para('')
 
-    # ── Parties Block ────────────────────────────────────────────────────
-    parties_table = doc.add_table(rows=5, cols=3)
-    parties_table.autofit = True
+    # ── Parties Block (plaintiff / נגד / defendant) ──────────────────────
+    # Use a 2-column borderless table: right side for party info, left empty spacer
+    parties_table = doc.add_table(rows=5, cols=2)
 
-    set_cell_rtl(parties_table.rows[0].cells[2], plaintiff_name, bold=True, size=12)
+    # Set table properties: bidiVisual, full width, borderless
+    p_tbl_el = parties_table._element
+    p_tblPr = p_tbl_el.find(qn('w:tblPr'))
+    if p_tblPr is None:
+        p_tblPr = etree.SubElement(p_tbl_el, qn('w:tblPr'))
+    etree.SubElement(p_tblPr, qn('w:bidiVisual'))
+    p_tblW = etree.SubElement(p_tblPr, qn('w:tblW'))
+    p_tblW.set(qn('w:type'), 'dxa')
+    p_tblW.set(qn('w:w'), '9026')
+
+    # Grid: right column 5000 (party info), left column 4026 (spacer)
+    p_grid = p_tbl_el.find(qn('w:tblGrid'))
+    if p_grid is None:
+        p_grid = etree.SubElement(p_tbl_el, qn('w:tblGrid'))
+    else:
+        for gc in p_grid.findall(qn('w:gridCol')):
+            p_grid.remove(gc)
+    gc1 = etree.SubElement(p_grid, qn('w:gridCol'))
+    gc1.set(qn('w:w'), '5000')
+    gc2 = etree.SubElement(p_grid, qn('w:gridCol'))
+    gc2.set(qn('w:w'), '4026')
+
+    # Remove all borders
+    p_borders = etree.SubElement(p_tblPr, qn('w:tblBorders'))
+    for bn in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+        b = etree.SubElement(p_borders, qn(f'w:{bn}'))
+        b.set(qn('w:val'), 'none')
+        b.set(qn('w:sz'), '0')
+        b.set(qn('w:space'), '0')
+        b.set(qn('w:color'), 'auto')
+
+    # Row 0: Plaintiff name (right-aligned, bold)
+    set_cell_rtl(parties_table.rows[0].cells[0], plaintiff_name, bold=True, size=12,
+                 alignment=WD_ALIGN_PARAGRAPH.RIGHT)
     set_cell_rtl(parties_table.rows[0].cells[1], '', size=12)
-    set_cell_rtl(parties_table.rows[0].cells[0], '', size=12)
 
-    set_cell_rtl(parties_table.rows[1].cells[2], pronoun, size=12)
+    # Row 1: Plaintiff label
+    set_cell_rtl(parties_table.rows[1].cells[0], pronoun, size=12,
+                 alignment=WD_ALIGN_PARAGRAPH.RIGHT)
     set_cell_rtl(parties_table.rows[1].cells[1], '', size=12)
-    set_cell_rtl(parties_table.rows[1].cells[0], '', size=12)
 
-    set_cell_rtl(parties_table.rows[2].cells[1], '- נ ג ד -', bold=True, size=12,
+    # Row 2: "- נ ג ד -" centered across full width
+    parties_table.rows[2].cells[0].merge(parties_table.rows[2].cells[1])
+    set_cell_rtl(parties_table.rows[2].cells[0], '- נ ג ד -', bold=True, size=14,
                  alignment=WD_ALIGN_PARAGRAPH.CENTER)
-    set_cell_rtl(parties_table.rows[2].cells[0], '', size=12)
-    set_cell_rtl(parties_table.rows[2].cells[2], '', size=12)
 
-    set_cell_rtl(parties_table.rows[3].cells[2], defendant_name, bold=True, size=12)
+    # Row 3: Defendant name (right-aligned, bold)
+    set_cell_rtl(parties_table.rows[3].cells[0], defendant_name, bold=True, size=12,
+                 alignment=WD_ALIGN_PARAGRAPH.RIGHT)
     set_cell_rtl(parties_table.rows[3].cells[1], '', size=12)
-    set_cell_rtl(parties_table.rows[3].cells[0], '', size=12)
 
+    # Row 4: Defendant label
     defendant_label = "הנתבע" if data.get("defendant_type") == "individual" else "הנתבעת"
-    set_cell_rtl(parties_table.rows[4].cells[2], defendant_label, size=12)
+    set_cell_rtl(parties_table.rows[4].cells[0], defendant_label, size=12,
+                 alignment=WD_ALIGN_PARAGRAPH.RIGHT)
     set_cell_rtl(parties_table.rows[4].cells[1], '', size=12)
-    set_cell_rtl(parties_table.rows[4].cells[0], '', size=12)
-
-    ptblPr = _make_table_borderless(parties_table)
-    _set_table_bidi(ptblPr)
 
     # ── Title ────────────────────────────────────────────────────────────
     add_title('כ ת ב    ת ב י ע ה')
