@@ -714,78 +714,399 @@ def generate_claim_text(data, calculations):
 
 
 def generate_docx(data, calculations, claim_text):
-    """Generate a Word document for the claim."""
+    """Generate a Word document matching the exact format of Levin Telraz firm claims.
+
+    Based on analysis of the real כתב תביעה documents:
+    - Font: David 12pt throughout
+    - Body paragraphs: Justified, RTL (bidi), 1.5 line spacing, auto-numbered
+    - Section headers: Bold + Underline, not numbered
+    - Title: Heading 4 style, centered
+    - Margins: ~1.8cm left/right, small top/bottom
+    - Court header table at top with parties, case type, and amount
+    - Signature table at bottom with attorney details
+    """
+    from docx.shared import Emu
+    from copy import deepcopy
+    from lxml import etree
+
     doc = Document()
+    WNS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 
-    # Set RTL for the whole document
+    # ── Page Setup ───────────────────────────────────────────────────────
     for section in doc.sections:
-        section.left_margin = Cm(2.5)
-        section.right_margin = Cm(2.5)
-        section.top_margin = Cm(2.5)
-        section.bottom_margin = Cm(2.5)
+        section.left_margin = Cm(1.8)
+        section.right_margin = Cm(1.8)
+        section.top_margin = Cm(0.7)
+        section.bottom_margin = Cm(1.3)
 
-    style = doc.styles['Normal']
-    font = style.font
-    font.name = 'David'
-    font.size = Pt(12)
-    font.rtl = True
+    # ── Configure Default Styles ─────────────────────────────────────────
+    style_normal = doc.styles['Normal']
+    style_normal.font.name = 'David'
+    style_normal.font.size = Pt(12)
+    style_normal.font.rtl = True
+    pf = style_normal.paragraph_format
+    pf.line_spacing = 1.5
+    pf.space_before = Pt(6)
+    pf.space_after = Pt(6)
+    pf.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    # Set bidi on Normal style
+    style_pPr = style_normal.element.get_or_add_pPr()
+    etree.SubElement(style_pPr, qn('w:bidi'))
 
-    # RTL helper
-    def add_rtl_paragraph(text, bold=False, alignment=WD_ALIGN_PARAGRAPH.RIGHT, size=12):
-        p = doc.add_paragraph()
-        p.alignment = alignment
+    # ── Create Numbering (auto-numbered paragraphs like the real doc) ────
+    # We need to inject numbering definitions into the document.
+    # Force creation of numbering part by adding and removing a list paragraph.
+    from docx.opc.constants import RELATIONSHIP_TYPE as RT
+    try:
+        numbering_part = doc.part.numbering_part
+    except Exception:
+        # Create a dummy list item to force numbering part creation
+        dummy = doc.add_paragraph('', style='List Number')
+        numbering_part = doc.part.numbering_part
+        # Remove the dummy paragraph
+        dummy._element.getparent().remove(dummy._element)
+    numbering_elm = numbering_part.element
+
+    # Abstract numbering definition for Hebrew decimal numbers
+    abstract_num_xml = f'''
+    <w:abstractNum w:abstractNumId="1" xmlns:w="{WNS}">
+        <w:multiLevelType w:val="hybridMultilevel"/>
+        <w:lvl w:ilvl="0">
+            <w:start w:val="1"/>
+            <w:numFmt w:val="decimal"/>
+            <w:lvlText w:val="%1."/>
+            <w:lvlJc w:val="left"/>
+            <w:pPr>
+                <w:ind w:left="720" w:hanging="360"/>
+            </w:pPr>
+            <w:rPr>
+                <w:rFonts w:ascii="David" w:hAnsi="David" w:cs="David"/>
+                <w:sz w:val="24"/>
+                <w:szCs w:val="24"/>
+            </w:rPr>
+        </w:lvl>
+        <w:lvl w:ilvl="1">
+            <w:start w:val="1"/>
+            <w:numFmt w:val="decimal"/>
+            <w:lvlText w:val="%1.%2"/>
+            <w:lvlJc w:val="left"/>
+            <w:pPr>
+                <w:ind w:left="1440" w:hanging="360"/>
+            </w:pPr>
+            <w:rPr>
+                <w:rFonts w:ascii="David" w:hAnsi="David" w:cs="David"/>
+                <w:sz w:val="24"/>
+                <w:szCs w:val="24"/>
+            </w:rPr>
+        </w:lvl>
+    </w:abstractNum>
+    '''
+    abstract_num = etree.fromstring(abstract_num_xml)
+    numbering_elm.insert(0, abstract_num)
+
+    num_xml = f'''
+    <w:num w:numId="1" xmlns:w="{WNS}">
+        <w:abstractNumId w:val="1"/>
+    </w:num>
+    '''
+    num_elem = etree.fromstring(num_xml)
+    numbering_elm.append(num_elem)
+
+    # ── Helper Functions ─────────────────────────────────────────────────
+    paragraph_counter = [0]  # mutable counter for numbering
+
+    def _set_rtl_bidi(p):
+        """Set RTL and bidi on a paragraph element."""
         pPr = p._element.get_or_add_pPr()
-        bidi = pPr.makeelement(qn('w:bidi'), {})
-        pPr.append(bidi)
-        run = p.add_run(text)
+        # Add bidi if not present
+        if pPr.find(qn('w:bidi')) is None:
+            etree.SubElement(pPr, qn('w:bidi'))
+
+    def _set_run_font(run, size=12, bold=False, underline=False, font_name='David'):
+        """Configure run font properties."""
+        run.font.name = font_name
         run.font.size = Pt(size)
         run.font.bold = bold
+        run.font.underline = underline
         run.font.rtl = True
-        run.font.name = 'David'
+        # Set complex script font (for Hebrew)
+        rPr = run._element.get_or_add_rPr()
+        rFonts = rPr.find(qn('w:rFonts'))
+        if rFonts is None:
+            rFonts = etree.SubElement(rPr, qn('w:rFonts'))
+        rFonts.set(qn('w:cs'), font_name)
+        # Set cs size
+        szCs = rPr.find(qn('w:szCs'))
+        if szCs is None:
+            szCs = etree.SubElement(rPr, qn('w:szCs'))
+        szCs.set(qn('w:val'), str(size * 2))
+
+    def _add_numbering(p, level=0):
+        """Add auto-numbering to a paragraph."""
+        pPr = p._element.get_or_add_pPr()
+        numPr = etree.SubElement(pPr, qn('w:numPr'))
+        ilvl = etree.SubElement(numPr, qn('w:ilvl'))
+        ilvl.set(qn('w:val'), str(level))
+        numId = etree.SubElement(numPr, qn('w:numId'))
+        numId.set(qn('w:val'), '1')
+
+    def add_title(text):
+        """Add the main title (כתב תביעה) - centered, bold, large."""
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _set_rtl_bidi(p)
+        p.paragraph_format.space_before = Pt(12)
+        p.paragraph_format.space_after = Pt(12)
+        run = p.add_run(text)
+        _set_run_font(run, size=16, bold=True)
         return p
 
-    # Header
-    header_text = data.get("court_header", "בית הדין האזורי לעבודה")
-    add_rtl_paragraph(header_text, bold=True, alignment=WD_ALIGN_PARAGRAPH.CENTER, size=14)
-    add_rtl_paragraph("", size=8)
+    def add_section_header(text):
+        """Add a section header - bold, underlined, justified, not numbered."""
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        _set_rtl_bidi(p)
+        p.paragraph_format.space_before = Pt(12)
+        p.paragraph_format.space_after = Pt(6)
+        run = p.add_run(text)
+        _set_run_font(run, size=12, bold=True, underline=True)
+        return p
 
-    # Parties header
+    def add_numbered_para(text, level=0):
+        """Add a numbered body paragraph - justified, RTL, 1.5 spacing."""
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        _set_rtl_bidi(p)
+        _add_numbering(p, level=level)
+        p.paragraph_format.line_spacing = 1.5
+        p.paragraph_format.space_before = Pt(6)
+        p.paragraph_format.space_after = Pt(6)
+        run = p.add_run(text)
+        _set_run_font(run, size=12)
+        return p
+
+    def add_plain_para(text, alignment=WD_ALIGN_PARAGRAPH.JUSTIFY, size=12,
+                       bold=False, spacing_before=6, spacing_after=6):
+        """Add a plain (non-numbered) paragraph."""
+        p = doc.add_paragraph()
+        p.alignment = alignment
+        _set_rtl_bidi(p)
+        p.paragraph_format.line_spacing = 1.5
+        p.paragraph_format.space_before = Pt(spacing_before)
+        p.paragraph_format.space_after = Pt(spacing_after)
+        if text:
+            run = p.add_run(text)
+            _set_run_font(run, size=size, bold=bold)
+        return p
+
+    def add_calculation_line(text):
+        """Add a calculation/formula line - not numbered, indented."""
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        _set_rtl_bidi(p)
+        p.paragraph_format.line_spacing = 1.5
+        p.paragraph_format.space_before = Pt(2)
+        p.paragraph_format.space_after = Pt(2)
+        # Indent
+        pPr = p._element.get_or_add_pPr()
+        ind = etree.SubElement(pPr, qn('w:ind'))
+        ind.set(qn('w:right'), '720')
+        run = p.add_run(text)
+        _set_run_font(run, size=12)
+        return p
+
+    # ── Helper to build RTL table cell ───────────────────────────────────
+    def set_cell_rtl(cell, text, bold=False, size=12, alignment=WD_ALIGN_PARAGRAPH.RIGHT):
+        """Set cell text with RTL formatting."""
+        cell.text = ''
+        p = cell.paragraphs[0]
+        p.alignment = alignment
+        _set_rtl_bidi(p)
+        if text:
+            for line_idx, line in enumerate(text.split('\n')):
+                if line_idx > 0:
+                    run = p.add_run()
+                    run.add_break()
+                run = p.add_run(line)
+                _set_run_font(run, size=size, bold=bold)
+        # Set cell direction
+        tc = cell._element
+        tcPr = tc.find(qn('w:tcPr'))
+        if tcPr is None:
+            tcPr = etree.SubElement(tc, qn('w:tcPr'))
+            tc.insert(0, tcPr)
+
+    # ── Data Extraction ──────────────────────────────────────────────────
     plaintiff_name = data.get("plaintiff_name", "")
     defendant_name = data.get("defendant_name", "")
-    add_rtl_paragraph(f"{plaintiff_name}", bold=True, alignment=WD_ALIGN_PARAGRAPH.RIGHT)
-    add_rtl_paragraph("התובע/ת", alignment=WD_ALIGN_PARAGRAPH.RIGHT)
-    add_rtl_paragraph("- נ ג ד -", bold=True, alignment=WD_ALIGN_PARAGRAPH.CENTER)
-    add_rtl_paragraph(f"{defendant_name}", bold=True, alignment=WD_ALIGN_PARAGRAPH.RIGHT)
-    add_rtl_paragraph("הנתבע/ת", alignment=WD_ALIGN_PARAGRAPH.RIGHT)
-    add_rtl_paragraph("", size=8)
+    court_name = data.get("court_header", "בית הדין האזורי לעבודה")
+    gender = data.get("gender", "male")
+    pronoun = "התובע" if gender == "male" else "התובעת"
+    total = calculations["total"]
+    attorney_name = data.get("attorney_name", "")
+    attorney_id = data.get("attorney_id", "")
 
-    # Body - split by lines
-    lines = claim_text.split("\n")
-    section_headers = [
-        "כ ת ב    ת ב י ע ה", "כללי", "הצדדים", "רקע עובדתי",
-        "היקף משרה ושכר קובע", "רכיבי התביעה", "סיכום",
+    # ══════════════════════════════════════════════════════════════════════
+    # BUILD THE DOCUMENT
+    # ══════════════════════════════════════════════════════════════════════
+
+    # ── Court Header Table (top of document) ─────────────────────────────
+    # Format: בס"ד | court name on right
+    header_table = doc.add_table(rows=4, cols=2)
+    header_table.autofit = True
+
+    # Row 0: בס"ד on left, empty right
+    set_cell_rtl(header_table.rows[0].cells[0], 'בס"ד', size=11)
+    set_cell_rtl(header_table.rows[0].cells[1], '', size=11)
+
+    # Row 1: Court name centered across
+    set_cell_rtl(header_table.rows[1].cells[0], court_name, bold=True, size=13,
+                 alignment=WD_ALIGN_PARAGRAPH.CENTER)
+    set_cell_rtl(header_table.rows[1].cells[1], '', size=11)
+    # Merge row 1 cells
+    header_table.rows[1].cells[0].merge(header_table.rows[1].cells[1])
+
+    # Row 2: Case type
+    set_cell_rtl(header_table.rows[2].cells[0], 'מהות התביעה: הצהרתית וכספית',
+                 size=11, alignment=WD_ALIGN_PARAGRAPH.CENTER)
+    set_cell_rtl(header_table.rows[2].cells[1], '', size=11)
+    header_table.rows[2].cells[0].merge(header_table.rows[2].cells[1])
+
+    # Row 3: Amount
+    amount_text = f'סכום התביעה: {total:,.0f} ₪ קרן (לא כולל הצמדה וריבית, שכ"ט עו"ד והוצאות)'
+    set_cell_rtl(header_table.rows[3].cells[0], amount_text,
+                 bold=True, size=11, alignment=WD_ALIGN_PARAGRAPH.CENTER)
+    set_cell_rtl(header_table.rows[3].cells[1], '', size=11)
+    header_table.rows[3].cells[0].merge(header_table.rows[3].cells[1])
+
+    # Remove table borders
+    tbl = header_table._element
+    tblPr = tbl.find(qn('w:tblPr'))
+    if tblPr is None:
+        tblPr = etree.SubElement(tbl, qn('w:tblPr'))
+    tblBorders = etree.SubElement(tblPr, qn('w:tblBorders'))
+    for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+        border = etree.SubElement(tblBorders, qn(f'w:{border_name}'))
+        border.set(qn('w:val'), 'none')
+        border.set(qn('w:sz'), '0')
+        border.set(qn('w:space'), '0')
+        border.set(qn('w:color'), 'auto')
+
+    # Set RTL on table
+    bidi_tbl = etree.SubElement(tblPr, qn('w:bidiVisual'))
+
+    add_plain_para('', spacing_before=2, spacing_after=2)
+
+    # ── Parties Block ────────────────────────────────────────────────────
+    parties_table = doc.add_table(rows=5, cols=3)
+    parties_table.autofit = True
+
+    # Plaintiff
+    set_cell_rtl(parties_table.rows[0].cells[2], plaintiff_name, bold=True, size=12)
+    set_cell_rtl(parties_table.rows[0].cells[1], '', size=12)
+    set_cell_rtl(parties_table.rows[0].cells[0], '', size=12)
+
+    set_cell_rtl(parties_table.rows[1].cells[2], pronoun, size=12)
+    set_cell_rtl(parties_table.rows[1].cells[1], '', size=12)
+    set_cell_rtl(parties_table.rows[1].cells[0], '', size=12)
+
+    # vs
+    set_cell_rtl(parties_table.rows[2].cells[1], '- נ ג ד -', bold=True, size=12,
+                 alignment=WD_ALIGN_PARAGRAPH.CENTER)
+    set_cell_rtl(parties_table.rows[2].cells[0], '', size=12)
+    set_cell_rtl(parties_table.rows[2].cells[2], '', size=12)
+
+    # Defendant
+    set_cell_rtl(parties_table.rows[3].cells[2], defendant_name, bold=True, size=12)
+    set_cell_rtl(parties_table.rows[3].cells[1], '', size=12)
+    set_cell_rtl(parties_table.rows[3].cells[0], '', size=12)
+
+    defendant_label = "הנתבע" if data.get("defendant_type") == "individual" else "הנתבעת"
+    set_cell_rtl(parties_table.rows[4].cells[2], defendant_label, size=12)
+    set_cell_rtl(parties_table.rows[4].cells[1], '', size=12)
+    set_cell_rtl(parties_table.rows[4].cells[0], '', size=12)
+
+    # Remove borders from parties table
+    ptbl = parties_table._element
+    ptblPr = ptbl.find(qn('w:tblPr'))
+    if ptblPr is None:
+        ptblPr = etree.SubElement(ptbl, qn('w:tblPr'))
+    ptblBorders = etree.SubElement(ptblPr, qn('w:tblBorders'))
+    for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+        border = etree.SubElement(ptblBorders, qn(f'w:{border_name}'))
+        border.set(qn('w:val'), 'none')
+        border.set(qn('w:sz'), '0')
+        border.set(qn('w:space'), '0')
+        border.set(qn('w:color'), 'auto')
+    etree.SubElement(ptblPr, qn('w:bidiVisual'))
+
+    # ── Title ────────────────────────────────────────────────────────────
+    add_title('כ ת ב    ת ב י ע ה')
+
+    # ── Body - Parse claim_text and format properly ──────────────────────
+    section_headers = {
+        "כללי", "הצדדים", "רקע עובדתי", "היקף משרה ושכר קובע",
+        "רכיבי התביעה", "סיכום",
         "שכר עבודה שלא שולם", "הפרשי שכר – שעות נוספות",
         "הפרשי הפרשות לפנסיה", "פיצויי פיטורים",
         "הפרשי שכר דמי חופשה ופדיון חופשה",
         "דמי חגים והפרשי דמי חג", "דמי הבראה",
         "ניכויים שלא כדין – תגמולי עובד", "פיצויי הלנת שכר",
         "פיצוי בגין עוגמת נפש", "מסירת מסמכי גמר חשבון",
-        "סיכום רכיבי התביעה:",
-    ]
+        "עילות התביעה", "הסעדים המבוקשים",
+    }
 
+    lines = claim_text.split("\n")
     for line in lines:
         stripped = line.strip()
         if not stripped:
-            add_rtl_paragraph("", size=6)
-        elif stripped in section_headers:
-            add_rtl_paragraph(stripped, bold=True, size=13)
+            continue  # Skip empty lines (spacing handled by paragraph formatting)
+        elif stripped == "כ ת ב    ת ב י ע ה":
+            continue  # Already added as title
+        elif stripped in section_headers or stripped == "סיכום רכיבי התביעה:":
+            add_section_header(stripped)
+        elif stripped.startswith("•"):
+            # Bullet point in summary - use sub-numbering
+            add_numbered_para(stripped.lstrip("• "), level=1)
+        elif any(c in stripped for c in ['=', '*']) and '₪' in stripped and '(' in stripped:
+            # Calculation formula line
+            add_calculation_line(stripped)
         else:
-            add_rtl_paragraph(stripped)
+            # Regular numbered paragraph
+            add_numbered_para(stripped)
 
-    # Signature block
-    add_rtl_paragraph("", size=12)
-    add_rtl_paragraph("__________________", alignment=WD_ALIGN_PARAGRAPH.LEFT)
-    add_rtl_paragraph("ב\"כ התובע/ת", alignment=WD_ALIGN_PARAGRAPH.LEFT)
+    # ── Signature Table ──────────────────────────────────────────────────
+    add_plain_para('', spacing_before=6, spacing_after=2)
+
+    # Power of attorney note
+    add_plain_para('*ייפוי כוח מצורף לכתב התביעה', bold=True, size=11,
+                   spacing_before=12, spacing_after=6)
+
+    sig_table = doc.add_table(rows=1, cols=3)
+    sig_table.autofit = True
+
+    if attorney_name and attorney_id:
+        sig_text = f'{attorney_name}, עו"ד\nמ.ר. {attorney_id}\nב"כ {pronoun}'
+    else:
+        sig_text = f'__________________\nב"כ {pronoun}'
+
+    set_cell_rtl(sig_table.rows[0].cells[2], sig_text, size=12)
+    set_cell_rtl(sig_table.rows[0].cells[1], '', size=12)
+    set_cell_rtl(sig_table.rows[0].cells[0], '', size=12)
+
+    # Remove borders from signature table
+    stbl = sig_table._element
+    stblPr = stbl.find(qn('w:tblPr'))
+    if stblPr is None:
+        stblPr = etree.SubElement(stbl, qn('w:tblPr'))
+    stblBorders = etree.SubElement(stblPr, qn('w:tblBorders'))
+    for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+        border = etree.SubElement(stblBorders, qn(f'w:{border_name}'))
+        border.set(qn('w:val'), 'none')
+        border.set(qn('w:sz'), '0')
+        border.set(qn('w:space'), '0')
+        border.set(qn('w:color'), 'auto')
+    etree.SubElement(stblPr, qn('w:bidiVisual'))
 
     return doc
 

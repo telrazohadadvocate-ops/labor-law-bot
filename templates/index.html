@@ -706,9 +706,23 @@
                 <label>תיאור נרטיבי של הנסיבות</label>
                 <textarea id="narrative" rows="6" placeholder="תארו את הנסיבות הרלוונטיות: הרעת תנאים, התנהגות המעסיק, אירועים מרכזיים וכו'. טקסט זה ישולב בגוף כתב התביעה."></textarea>
             </div>
-            <div class="form-group">
-                <label>בית דין (כותרת)</label>
-                <input type="text" id="court_header" value="בית הדין האזורי לעבודה">
+        </div>
+
+        <div class="card">
+            <h2>פרטי בית הדין ובא כוח</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>בית דין</label>
+                    <input type="text" id="court_header" value="בית הדין האזורי לעבודה">
+                </div>
+                <div class="form-group">
+                    <label>שם עורך/ת הדין</label>
+                    <input type="text" id="attorney_name" placeholder="למשל: דורון לוין">
+                </div>
+                <div class="form-group">
+                    <label>מספר רישיון (מ.ר.)</label>
+                    <input type="text" id="attorney_id" placeholder="למשל: 87732">
+                </div>
             </div>
         </div>
 
@@ -837,7 +851,7 @@
             'holiday_days_paid', 'holiday_rate_paid',
             'recuperation_days_paid',
             'salary_delay_amount', 'emotional_amount', 'deduction_amount',
-            'narrative', 'court_header',
+            'narrative', 'court_header', 'attorney_name', 'attorney_id',
         ];
 
         const data = {};
