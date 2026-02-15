@@ -174,33 +174,45 @@ def calculate_pension_gaps(monthly_salary, months, employer_rate=PENSION_EMPLOYE
     }
 
 
-def calculate_overtime(hourly_wage, standard_daily_hours, actual_daily_hours,
-                       global_ot_hours, work_days_per_week, months):
-    """Calculate overtime pay owed (שעות נוספות) based on 125%/150% daily breakdown.
+def calculate_overtime(weekly_overtime_125, weekly_overtime_150, hourly_rate, months):
+    """Calculate overtime pay owed (שעות נוספות) - basic weekly input mode."""
+    rate_125 = hourly_rate * 1.25
+    rate_150 = hourly_rate * 1.50
+    surcharge_125 = hourly_rate * OVERTIME_125_RATE
+    surcharge_150 = hourly_rate * OVERTIME_150_RATE
 
-    Args:
-        hourly_wage: Base hourly wage
-        standard_daily_hours: Standard/legal daily hours (e.g. 8)
-        actual_daily_hours: Actual average daily hours worked
-        global_ot_hours: Global overtime hours per month that were paid
-        work_days_per_week: Work days per week (5 or 6)
-        months: Total months of employment
-    """
+    monthly_125 = weekly_overtime_125 * 4 * surcharge_125
+    monthly_150 = weekly_overtime_150 * 4 * surcharge_150
+
+    total = round((monthly_125 + monthly_150) * months, 2)
+    return {
+        "mode": "basic",
+        "monthly_125": round(monthly_125, 2),
+        "monthly_150": round(monthly_150, 2),
+        "total": total,
+        "rate_125": round(rate_125, 2),
+        "rate_150": round(rate_150, 2),
+        "surcharge_125": round(surcharge_125, 2),
+        "surcharge_150": round(surcharge_150, 2),
+    }
+
+
+def calculate_overtime_global(hourly_wage, standard_daily_hours, actual_daily_hours,
+                              global_ot_hours, work_days_per_week, months):
+    """Calculate overtime with global OT comparison (125%/150% daily breakdown)."""
     daily_ot = max(0, actual_daily_hours - standard_daily_hours)
-    daily_ot_125 = min(daily_ot, 2)  # First 2 hours at 125%
-    daily_ot_150 = max(0, daily_ot - 2)  # Remaining at 150%
+    daily_ot_125 = min(daily_ot, 2)
+    daily_ot_150 = max(0, daily_ot - 2)
 
     rate_125 = hourly_wage * 1.25
     rate_150 = hourly_wage * 1.50
 
     work_days_per_month = round(work_days_per_week * 4.33, 1)
 
-    # What should have been paid per month
     monthly_ot_125_hours = round(daily_ot_125 * work_days_per_month, 2)
     monthly_ot_150_hours = round(daily_ot_150 * work_days_per_month, 2)
     monthly_should_pay = round(monthly_ot_125_hours * rate_125 + monthly_ot_150_hours * rate_150, 2)
 
-    # What was actually paid (global OT hours, split into 125%/150% buckets)
     global_125_hours = min(global_ot_hours, daily_ot_125 * work_days_per_month) if daily_ot > 0 else min(global_ot_hours, 2 * work_days_per_month)
     global_150_hours = max(0, global_ot_hours - global_125_hours)
     monthly_paid = round(global_125_hours * rate_125 + global_150_hours * rate_150, 2)
@@ -209,6 +221,7 @@ def calculate_overtime(hourly_wage, standard_daily_hours, actual_daily_hours,
     total = round(monthly_difference * months, 2)
 
     return {
+        "mode": "global",
         "hourly_wage": hourly_wage,
         "standard_daily_hours": standard_daily_hours,
         "actual_daily_hours": actual_daily_hours,
@@ -314,14 +327,23 @@ def calculate_all_claims(data):
 
     # Overtime (שעות נוספות)
     if data.get("claim_overtime"):
-        ot_hourly_wage = safe_float(data.get("hourly_wage"), hourly_rate)
-        ot_standard = safe_float(data.get("standard_daily_hours"), 8)
+        ot_hourly_wage = safe_float(data.get("hourly_wage"), 0)
         ot_actual = safe_float(data.get("actual_daily_hours"), 0)
-        ot_global = safe_float(data.get("global_ot_hours"), 0)
-        ot = calculate_overtime(
-            ot_hourly_wage, ot_standard, ot_actual,
-            ot_global, work_days, duration["total_months"],
-        )
+        # Use global OT mode if hourly_wage and actual_daily_hours are filled in
+        if ot_hourly_wage > 0 and ot_actual > 0:
+            ot_standard = safe_float(data.get("standard_daily_hours"), 8)
+            ot_global = safe_float(data.get("global_ot_hours"), 0)
+            ot = calculate_overtime_global(
+                ot_hourly_wage, ot_standard, ot_actual,
+                ot_global, work_days, duration["total_months"],
+            )
+        else:
+            ot = calculate_overtime(
+                safe_float(data.get("weekly_overtime_125"), 0),
+                safe_float(data.get("weekly_overtime_150"), 0),
+                hourly_rate,
+                duration["total_months"],
+            )
         results["claims"]["overtime"] = {
             "name": "הפרשי שכר – שעות נוספות",
             "amount": ot["total"],
@@ -559,48 +581,62 @@ def generate_claim_text(data, calculations):
         c = claims["overtime"]
         d = c["details"]
         sections.append("הפרשי שכר – שעות נוספות")
-        sections.append(
-            f"כאמור, {pronoun} יטען/תטען כי הנתבע/ת לא שילם/ה לו/ה כנדרש בגין השעות הנוספות הרבות אותן {worked}."
-        )
-        sections.append(
-            f"שכרו/ה השעתי הבסיסי של {pronoun} הינו {d['hourly_wage']:.2f} ₪. "
-            f"יום עבודה סטנדרטי: {d['standard_daily_hours']:.1f} שעות. "
-            f"שעות עבודה בפועל ביום (ממוצע): {d['actual_daily_hours']:.1f} שעות."
-        )
-        sections.append(
-            f"בהתאם לחוק שעות עבודה ומנוחה, תשי\"א-1951, "
-            f"2 השעות הנוספות הראשונות מזכות בתוספת 25% (תעריף {d['rate_125']:.2f} ₪) "
-            f"ומעבר לכך בתוספת 50% (תעריף {d['rate_150']:.2f} ₪)."
-        )
-        sections.append(
-            f"תחשיב שעות נוספות שהיה צריך לשלם בכל חודש:"
-        )
-        sections.append(
-            f"שעות נוספות ביום: {d['daily_ot']:.1f} שעות "
-            f"({d['daily_ot_125']:.1f} שעות × 125% + {d['daily_ot_150']:.1f} שעות × 150%)"
-        )
-        sections.append(
-            f"ימי עבודה בחודש: {d['work_days_per_month']:.1f} ימים"
-        )
-        sections.append(
-            f"סכום שהיה צריך לשלם בחודש: "
-            f"{d['monthly_ot_125_hours']:.1f} שעות × {d['rate_125']:.2f} ₪ + "
-            f"{d['monthly_ot_150_hours']:.1f} שעות × {d['rate_150']:.2f} ₪ = "
-            f"{d['monthly_should_pay']:,.0f} ₪"
-        )
-        if d['global_ot_hours'] > 0:
+
+        if d.get("mode") == "global":
+            # Global OT mode - detailed calculation with paid-vs-owed comparison
             sections.append(
-                f"שעות נוספות גלובליות ששולמו בפועל: {d['global_ot_hours']:.1f} שעות בחודש "
-                f"(שוויין: {d['monthly_paid']:,.0f} ₪)"
+                f"כאמור, {pronoun} יטען/תטען כי הנתבע/ת לא שילם/ה לו/ה כנדרש בגין השעות הנוספות הרבות אותן {worked}."
             )
             sections.append(
-                f"הפרש חודשי: {d['monthly_should_pay']:,.0f} ₪ - {d['monthly_paid']:,.0f} ₪ = "
-                f"{d['monthly_difference']:,.0f} ₪"
+                f"שכרו/ה השעתי הבסיסי של {pronoun} הינו {d['hourly_wage']:.2f} ₪. "
+                f"יום עבודה סטנדרטי: {d['standard_daily_hours']:.1f} שעות. "
+                f"שעות עבודה בפועל ביום (ממוצע): {d['actual_daily_hours']:.1f} שעות."
             )
-        sections.append(
-            f"הפרש חודשי ({d['monthly_difference']:,.0f} ₪) × {d['months']} חודשי עבודה = "
-            f"{c['amount']:,.0f} ₪"
-        )
+            sections.append(
+                f"בהתאם לחוק שעות עבודה ומנוחה, תשי\"א-1951, "
+                f"2 השעות הנוספות הראשונות מזכות בתוספת 25% (תעריף {d['rate_125']:.2f} ₪) "
+                f"ומעבר לכך בתוספת 50% (תעריף {d['rate_150']:.2f} ₪)."
+            )
+            sections.append(
+                f"תחשיב שעות נוספות שהיה צריך לשלם בכל חודש:"
+            )
+            sections.append(
+                f"שעות נוספות ביום: {d['daily_ot']:.1f} שעות "
+                f"({d['daily_ot_125']:.1f} שעות × 125% + {d['daily_ot_150']:.1f} שעות × 150%)"
+            )
+            sections.append(
+                f"ימי עבודה בחודש: {d['work_days_per_month']:.1f} ימים"
+            )
+            sections.append(
+                f"סכום שהיה צריך לשלם בחודש: "
+                f"{d['monthly_ot_125_hours']:.1f} שעות × {d['rate_125']:.2f} ₪ + "
+                f"{d['monthly_ot_150_hours']:.1f} שעות × {d['rate_150']:.2f} ₪ = "
+                f"{d['monthly_should_pay']:,.0f} ₪"
+            )
+            if d['global_ot_hours'] > 0:
+                sections.append(
+                    f"שעות נוספות גלובליות ששולמו בפועל: {d['global_ot_hours']:.1f} שעות בחודש "
+                    f"(שוויין: {d['monthly_paid']:,.0f} ₪)"
+                )
+                sections.append(
+                    f"הפרש חודשי: {d['monthly_should_pay']:,.0f} ₪ - {d['monthly_paid']:,.0f} ₪ = "
+                    f"{d['monthly_difference']:,.0f} ₪"
+                )
+            sections.append(
+                f"הפרש חודשי ({d['monthly_difference']:,.0f} ₪) × {d['months']} חודשי עבודה = "
+                f"{c['amount']:,.0f} ₪"
+            )
+        else:
+            # Basic mode - simple weekly OT
+            sections.append(
+                f"כאמור, {pronoun} יטען/תטען כי הנתבע/ת כלל לא שילם/ה לו/ה בגין השעות הנוספות הרבות אותן {worked}."
+            )
+            sections.append(
+                f"שכרו/ה השעתי של {pronoun} הינו {hourly:.2f} ₪ ומשכך "
+                f"תעריף תוספת 25% הינו {d['surcharge_125']:.1f} ₪ "
+                f"ותעריף 50% הינו {d['surcharge_150']:.1f} ₪."
+            )
+
         sections.append(
             f"לאור האמור לעיל, בהתאם לתחשיבים, {pronoun} יבקש/תבקש כי בית הדין הנכבד "
             f"יחייב את הנתבע/ת לשלם ל{pronoun} הפרשי שכר שעות נוספות בסך של {c['amount']:,.0f} ₪ "
