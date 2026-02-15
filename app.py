@@ -7,7 +7,7 @@ import json
 import math
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
 from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -16,6 +16,10 @@ import os
 import io
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "lt-labor-law-bot-secret-key-2026")
+app.config["PERMANENT_SESSION_LIFETIME"] = 86400  # 24 hours in seconds
+
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "LT2026")
 
 # ── Israeli Labor Law Constants ──────────────────────────────────────────────
 
@@ -1569,6 +1573,33 @@ def generate_docx(data, calculations, claim_text):
 
 
 # ── Flask Routes ─────────────────────────────────────────────────────────────
+
+@app.before_request
+def require_login():
+    allowed = ("login", "static")
+    if request.endpoint not in allowed and not session.get("authenticated"):
+        return redirect(url_for("login"))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if password == APP_PASSWORD:
+            session.permanent = True
+            session["authenticated"] = True
+            return redirect(url_for("index"))
+        else:
+            error = "סיסמה שגויה, נסה שוב"
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
 
 @app.route("/")
 def index():

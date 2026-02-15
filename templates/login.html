@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>התחברות | מחולל כתבי תביעה - לוין תלרז</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', 'David', Arial, sans-serif;
+            background: #f7f8fa;
+            color: #1a202c;
+            direction: rtl;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-card {
+            background: #ffffff;
+            border-radius: 16px;
+            padding: 2.5rem;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+            border: 1px solid #e2e8f0;
+            text-align: center;
+        }
+
+        .login-card h1 {
+            color: #1a365d;
+            font-size: 1.5rem;
+            margin-bottom: 0.3rem;
+        }
+
+        .login-card .subtitle {
+            color: #c6a04a;
+            font-size: 0.95rem;
+            margin-bottom: 2rem;
+        }
+
+        .login-card label {
+            display: block;
+            text-align: right;
+            margin-bottom: 0.4rem;
+            font-weight: 600;
+            color: #1a365d;
+            font-size: 0.95rem;
+        }
+
+        .login-card input[type="password"] {
+            width: 100%;
+            padding: 0.7rem 1rem;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            direction: ltr;
+            text-align: center;
+            font-family: inherit;
+            margin-bottom: 1.2rem;
+        }
+
+        .login-card input:focus {
+            outline: none;
+            border-color: #1a365d;
+            box-shadow: 0 0 0 3px rgba(26,54,93,0.1);
+        }
+
+        .login-card button {
+            width: 100%;
+            padding: 0.75rem;
+            background: #1a365d;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            transition: background 0.2s;
+        }
+
+        .login-card button:hover {
+            background: #2c5282;
+        }
+
+        .error {
+            background: #fff5f5;
+            color: #c53030;
+            border: 1px solid #feb2b2;
+            border-radius: 8px;
+            padding: 0.6rem;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .lock-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="login-card">
+    <div class="lock-icon">&#128274;</div>
+    <h1>מחולל כתבי תביעה</h1>
+    <div class="subtitle">לוין תלרז - משרד עורכי דין</div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="/login">
+        <label for="password">סיסמה</label>
+        <input type="password" id="password" name="password" placeholder="הזינו סיסמה" autofocus required>
+        <button type="submit">כניסה</button>
+    </form>
+</div>
+
+</body>
+</html>
