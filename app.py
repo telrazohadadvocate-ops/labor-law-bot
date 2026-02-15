@@ -5,6 +5,7 @@ Generates Israeli labor law claims (כתבי תביעה) based on client intake 
 
 import json
 import math
+import logging
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
@@ -15,11 +16,72 @@ from docx.oxml.ns import qn
 import os
 import io
 
+import anthropic
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "lt-labor-law-bot-secret-key-2026")
 app.config["PERMANENT_SESSION_LIFETIME"] = 86400  # 24 hours in seconds
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "LT2026")
+
+# ── Claude API for Legal Text Rewriting ──────────────────────────────────────
+
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+_claude_client = None
+
+LEGAL_REWRITE_SYSTEM = (
+    "You are an Israeli labor law attorney drafting a כתב תביעה for בית הדין לעבודה. "
+    "Rewrite the following facts into professional legal Hebrew suitable for a כתב תביעה. "
+    "Use formal legal language, proper clause structure, and reference relevant Israeli labor laws where applicable. "
+    "Keep all facts accurate but express them in proper legal drafting style. "
+    "Write in third person. Do NOT add any facts that were not provided. "
+    "Return ONLY the rewritten legal text, nothing else — no preamble, no explanations."
+)
+
+
+def _get_claude_client():
+    """Lazy-init Anthropic client."""
+    global _claude_client
+    if _claude_client is None and ANTHROPIC_API_KEY:
+        _claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    return _claude_client
+
+
+def rewrite_as_legal_text(raw_text, context=""):
+    """Send raw user text to Claude API for professional legal Hebrew rewriting.
+
+    Args:
+        raw_text: The user's free-text input to rewrite.
+        context: Optional context about the case (names, dates, etc.) to help Claude
+                 maintain consistency.
+
+    Returns:
+        The rewritten legal text, or the original text if API is unavailable.
+    """
+    if not raw_text or not raw_text.strip():
+        return raw_text
+
+    client = _get_claude_client()
+    if client is None:
+        logging.warning("ANTHROPIC_API_KEY not set — returning original text without rewriting")
+        return raw_text
+
+    user_prompt = raw_text
+    if context:
+        user_prompt = f"הקשר התיק:\n{context}\n\nהטקסט לשכתוב:\n{raw_text}"
+
+    try:
+        message = client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=2000,
+            system=LEGAL_REWRITE_SYSTEM,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        return message.content[0].text.strip()
+    except Exception as e:
+        logging.error(f"Claude API rewrite failed: {e}")
+        return raw_text
+
 
 # ── Israeli Labor Law Constants ──────────────────────────────────────────────
 
@@ -453,8 +515,8 @@ def generate_claim_text(data, calculations):
     start_date = data.get("start_date", "")
     end_date = data.get("end_date", "")
     termination_type = data.get("termination_type", "fired")
-    work_schedule = data.get("work_schedule", "")
-    narrative = data.get("narrative", "")
+    work_schedule_raw = data.get("work_schedule", "")
+    narrative_raw = data.get("narrative", "")
 
     dur = calculations["duration"]
     det_salary = calculations["determining_salary"]
@@ -492,6 +554,28 @@ def generate_claim_text(data, calculations):
     else:
         termination_text = f"עד שהתפטר/ה ביום {end_fmt}"
 
+    # ── Rewrite free-text fields via Claude API ──────────────────────────
+    case_context = (
+        f"שם {pronoun}: {plaintiff_name}, ת.ז. {plaintiff_id}\n"
+        f"שם הנתבע/ת: {defendant_name}\n"
+        f"תקופת העסקה: {start_fmt} עד {end_fmt}\n"
+        f"תפקיד: {job_title}\n"
+        f"מין: {'זכר' if gender == 'male' else 'נקבה'}\n"
+        f"סוג סיום העסקה: {termination_type}"
+    )
+
+    work_schedule = work_schedule_raw
+    narrative = narrative_raw
+    _api_available = _get_claude_client() is not None
+
+    if work_schedule_raw and work_schedule_raw.strip() and _api_available:
+        work_schedule = rewrite_as_legal_text(
+            f"סדרי העבודה של {pronoun}: {work_schedule_raw}",
+            context=case_context,
+        )
+    if narrative_raw and narrative_raw.strip() and _api_available:
+        narrative = rewrite_as_legal_text(narrative_raw, context=case_context)
+
     sections = []
 
     # ── Header ──
@@ -527,7 +611,11 @@ def generate_claim_text(data, calculations):
         f"{pronoun} החל/ה את עבודתו/ה בנתבע/ת כ{job_title} החל מיום {start_fmt}."
     )
     if work_schedule:
-        sections.append(f"עבודתו/ה של {pronoun} התנהלה {work_schedule}.")
+        if _api_available and work_schedule != work_schedule_raw:
+            # Claude rewrote it — use as a standalone paragraph
+            sections.append(work_schedule)
+        else:
+            sections.append(f"עבודתו/ה של {pronoun} התנהלה {work_schedule}.")
 
     sections.append(
         f"לכל אורך תקופת העסקתו/ה, {pronoun} היה/תה עובד/ת מצוין/ת ומקצועי/ת "
