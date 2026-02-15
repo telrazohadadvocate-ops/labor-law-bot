@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="80" fill="#1a365d"/>
+  <text x="256" y="210" text-anchor="middle" font-family="serif" font-size="160" font-weight="bold" fill="#c6a04a">LT</text>
+  <line x1="120" y1="245" x2="392" y2="245" stroke="#c6a04a" stroke-width="4"/>
+  <text x="256" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="58" fill="#ffffff" direction="rtl">כתבי תביעה</text>
+  <rect x="100" y="375" width="312" height="6" rx="3" fill="#c6a04a" opacity="0.5"/>
+</svg>

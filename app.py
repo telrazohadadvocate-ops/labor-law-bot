@@ -1576,9 +1576,19 @@ def generate_docx(data, calculations, claim_text):
 
 @app.before_request
 def require_login():
-    allowed = ("login", "static")
+    allowed = ("login", "static", "service_worker", "manifest")
     if request.endpoint not in allowed and not session.get("authenticated"):
         return redirect(url_for("login"))
+
+
+@app.route("/sw.js")
+def service_worker():
+    return app.send_static_file("sw.js"), 200, {"Content-Type": "application/javascript", "Service-Worker-Allowed": "/"}
+
+
+@app.route("/manifest.json")
+def manifest():
+    return app.send_static_file("manifest.json"), 200, {"Content-Type": "application/manifest+json"}
 
 
 @app.route("/login", methods=["GET", "POST"])

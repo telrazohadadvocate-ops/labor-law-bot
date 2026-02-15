@@ -1,0 +1,32 @@
+{
+  "name": "מחולל כתבי תביעה - לוין תלרז",
+  "short_name": "כתבי תביעה",
+  "description": "מחולל כתבי תביעה לבית הדין לעבודה - לוין תלרז משרד עורכי דין",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f8fa",
+  "theme_color": "#1a365d",
+  "dir": "rtl",
+  "lang": "he",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/static/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-maskable.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

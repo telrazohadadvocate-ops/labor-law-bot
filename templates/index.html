@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>מחולל כתבי תביעה - דיני עבודה | לוין תלרז</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#1a365d">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="כתבי תביעה">
+    <link rel="apple-touch-icon" href="/static/icon-192.svg">
     <style>
         :root {
             --primary: #1a365d;
@@ -361,6 +367,22 @@
             .stepper { gap: 0; }
             .step { padding: 0.5rem 0.7rem; font-size: 0.8rem; }
         }
+
+        #install-btn {
+            display: none;
+            background: var(--accent);
+            color: #1a202c;
+            border: none;
+            padding: 0.45rem 1.2rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            margin-top: 0.6rem;
+            transition: background 0.2s, transform 0.1s;
+        }
+        #install-btn:hover { background: #d4b05c; transform: scale(1.03); }
     </style>
 </head>
 <body>
@@ -368,6 +390,7 @@
 <div class="header">
     <h1>מחולל כתבי תביעה - דיני עבודה</h1>
     <div class="subtitle">לוין תלרז - משרד עורכי דין</div>
+    <button id="install-btn" onclick="installApp()">&#128229; התקן אפליקציה</button>
 </div>
 
 <div class="container">
@@ -1057,6 +1080,37 @@
         document.querySelectorAll('.checkbox-item input[type="checkbox"]').forEach(cb => {
             if (cb.checked) cb.closest('.checkbox-item').classList.add('checked');
         });
+    });
+</script>
+
+<script>
+    // PWA: Service Worker Registration & Install Prompt
+    let deferredPrompt = null;
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        document.getElementById('install-btn').style.display = 'inline-block';
+    });
+
+    function installApp() {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then((result) => {
+            if (result.outcome === 'accepted') {
+                document.getElementById('install-btn').style.display = 'none';
+            }
+            deferredPrompt = null;
+        });
+    }
+
+    window.addEventListener('appinstalled', () => {
+        document.getElementById('install-btn').style.display = 'none';
+        deferredPrompt = null;
     });
 </script>
 

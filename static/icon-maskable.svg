@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Maskable icon: content in safe zone (center 80%) -->
+  <rect width="512" height="512" fill="#1a365d"/>
+  <text x="256" y="220" text-anchor="middle" font-family="serif" font-size="140" font-weight="bold" fill="#c6a04a">LT</text>
+  <line x1="140" y1="250" x2="372" y2="250" stroke="#c6a04a" stroke-width="4"/>
+  <text x="256" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="50" fill="#ffffff" direction="rtl">כתבי תביעה</text>
+</svg>
