@@ -608,16 +608,25 @@
         <div class="card" id="detail_overtime" style="display:none">
             <h2>שעות נוספות</h2>
             <div class="info-box">
-                שעות נוספות מחושבות לפי 25% עבור 2 השעות הנוספות הראשונות ו-50% מעבר לכך, על בסיס שבועי.
+                חישוב שעות נוספות: 2 שעות נוספות ראשונות ביום בתעריף 125%, מעבר לכך בתעריף 150%.<br>
+                המערכת תחשב את ההפרש בין התשלום שהתקבל בפועל (שעות נוספות גלובליות) לבין הסכום שהיה צריך להתקבל.
             </div>
             <div class="form-grid">
                 <div class="form-group">
-                    <label>שעות נוספות שבועיות (תעריף 125%)</label>
-                    <input type="number" step="0.5" id="weekly_overtime_125" value="0">
+                    <label>שכר שעתי (₪)</label>
+                    <input type="number" step="0.01" id="hourly_wage" value="0" placeholder="שכר שעתי בסיסי">
                 </div>
                 <div class="form-group">
-                    <label>שעות נוספות שבועיות (תעריף 150%)</label>
-                    <input type="number" step="0.5" id="weekly_overtime_150" value="0">
+                    <label>שעות עבודה סטנדרטיות ביום</label>
+                    <input type="number" step="0.5" id="standard_daily_hours" value="8" placeholder="8 שעות (ברירת מחדל)">
+                </div>
+                <div class="form-group">
+                    <label>שעות עבודה בפועל ביום (ממוצע)</label>
+                    <input type="number" step="0.5" id="actual_daily_hours" value="0" placeholder="למשל: 10.5">
+                </div>
+                <div class="form-group">
+                    <label>שעות נוספות גלובליות ששולמו בחודש</label>
+                    <input type="number" step="0.5" id="global_ot_hours" value="0" placeholder="מספר שעות נוספות שהוכרו">
                 </div>
             </div>
         </div>
@@ -845,7 +854,7 @@
             'claim_recuperation', 'claim_salary_delay', 'claim_emotional',
             'claim_deductions', 'claim_documents',
             'severance_deposited', 'unpaid_salary_amount',
-            'weekly_overtime_125', 'weekly_overtime_150',
+            'hourly_wage', 'standard_daily_hours', 'actual_daily_hours', 'global_ot_hours',
             'pension_deposited',
             'vacation_days_paid', 'vacation_rate_paid',
             'holiday_days_paid', 'holiday_rate_paid',

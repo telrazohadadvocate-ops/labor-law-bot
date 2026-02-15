@@ -9,7 +9,7 @@ from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 from flask import Flask, render_template, request, jsonify, send_file
 from docx import Document
-from docx.shared import Pt, Cm, RGBColor
+from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 import os
@@ -174,25 +174,60 @@ def calculate_pension_gaps(monthly_salary, months, employer_rate=PENSION_EMPLOYE
     }
 
 
-def calculate_overtime(weekly_overtime_125, weekly_overtime_150, hourly_rate, months):
-    """Calculate overtime pay owed (שעות נוספות)."""
-    rate_125 = hourly_rate * 1.25
-    rate_150 = hourly_rate * 1.50
-    surcharge_125 = hourly_rate * OVERTIME_125_RATE
-    surcharge_150 = hourly_rate * OVERTIME_150_RATE
+def calculate_overtime(hourly_wage, standard_daily_hours, actual_daily_hours,
+                       global_ot_hours, work_days_per_week, months):
+    """Calculate overtime pay owed (שעות נוספות) based on 125%/150% daily breakdown.
 
-    monthly_125 = weekly_overtime_125 * 4 * surcharge_125
-    monthly_150 = weekly_overtime_150 * 4 * surcharge_150
+    Args:
+        hourly_wage: Base hourly wage
+        standard_daily_hours: Standard/legal daily hours (e.g. 8)
+        actual_daily_hours: Actual average daily hours worked
+        global_ot_hours: Global overtime hours per month that were paid
+        work_days_per_week: Work days per week (5 or 6)
+        months: Total months of employment
+    """
+    daily_ot = max(0, actual_daily_hours - standard_daily_hours)
+    daily_ot_125 = min(daily_ot, 2)  # First 2 hours at 125%
+    daily_ot_150 = max(0, daily_ot - 2)  # Remaining at 150%
 
-    total = round((monthly_125 + monthly_150) * months, 2)
+    rate_125 = hourly_wage * 1.25
+    rate_150 = hourly_wage * 1.50
+
+    work_days_per_month = round(work_days_per_week * 4.33, 1)
+
+    # What should have been paid per month
+    monthly_ot_125_hours = round(daily_ot_125 * work_days_per_month, 2)
+    monthly_ot_150_hours = round(daily_ot_150 * work_days_per_month, 2)
+    monthly_should_pay = round(monthly_ot_125_hours * rate_125 + monthly_ot_150_hours * rate_150, 2)
+
+    # What was actually paid (global OT hours, split into 125%/150% buckets)
+    global_125_hours = min(global_ot_hours, daily_ot_125 * work_days_per_month) if daily_ot > 0 else min(global_ot_hours, 2 * work_days_per_month)
+    global_150_hours = max(0, global_ot_hours - global_125_hours)
+    monthly_paid = round(global_125_hours * rate_125 + global_150_hours * rate_150, 2)
+
+    monthly_difference = round(max(0, monthly_should_pay - monthly_paid), 2)
+    total = round(monthly_difference * months, 2)
+
     return {
-        "monthly_125": round(monthly_125, 2),
-        "monthly_150": round(monthly_150, 2),
-        "total": total,
+        "hourly_wage": hourly_wage,
+        "standard_daily_hours": standard_daily_hours,
+        "actual_daily_hours": actual_daily_hours,
+        "daily_ot": round(daily_ot, 2),
+        "daily_ot_125": round(daily_ot_125, 2),
+        "daily_ot_150": round(daily_ot_150, 2),
         "rate_125": round(rate_125, 2),
         "rate_150": round(rate_150, 2),
-        "surcharge_125": round(surcharge_125, 2),
-        "surcharge_150": round(surcharge_150, 2),
+        "work_days_per_month": work_days_per_month,
+        "monthly_ot_125_hours": monthly_ot_125_hours,
+        "monthly_ot_150_hours": monthly_ot_150_hours,
+        "monthly_should_pay": monthly_should_pay,
+        "global_ot_hours": global_ot_hours,
+        "global_125_hours": round(global_125_hours, 2),
+        "global_150_hours": round(global_150_hours, 2),
+        "monthly_paid": monthly_paid,
+        "monthly_difference": monthly_difference,
+        "total": total,
+        "months": months,
     }
 
 
@@ -279,11 +314,13 @@ def calculate_all_claims(data):
 
     # Overtime (שעות נוספות)
     if data.get("claim_overtime"):
+        ot_hourly_wage = safe_float(data.get("hourly_wage"), hourly_rate)
+        ot_standard = safe_float(data.get("standard_daily_hours"), 8)
+        ot_actual = safe_float(data.get("actual_daily_hours"), 0)
+        ot_global = safe_float(data.get("global_ot_hours"), 0)
         ot = calculate_overtime(
-            safe_float(data.get("weekly_overtime_125"), 0),
-            safe_float(data.get("weekly_overtime_150"), 0),
-            hourly_rate,
-            duration["total_months"],
+            ot_hourly_wage, ot_standard, ot_actual,
+            ot_global, work_days, duration["total_months"],
         )
         results["claims"]["overtime"] = {
             "name": "הפרשי שכר – שעות נוספות",
@@ -523,12 +560,46 @@ def generate_claim_text(data, calculations):
         d = c["details"]
         sections.append("הפרשי שכר – שעות נוספות")
         sections.append(
-            f"כאמור, {pronoun} יטען/תטען כי הנתבע/ת כלל לא שילם/ה לו/ה בגין השעות הנוספות הרבות אותן {worked}."
+            f"כאמור, {pronoun} יטען/תטען כי הנתבע/ת לא שילם/ה לו/ה כנדרש בגין השעות הנוספות הרבות אותן {worked}."
         )
         sections.append(
-            f"שכרו/ה השעתי של {pronoun} הינו {hourly:.2f} ₪ ומשכך "
-            f"תעריף תוספת 25% הינו {d['surcharge_125']:.1f} ₪ "
-            f"ותעריף 50% הינו {d['surcharge_150']:.1f} ₪."
+            f"שכרו/ה השעתי הבסיסי של {pronoun} הינו {d['hourly_wage']:.2f} ₪. "
+            f"יום עבודה סטנדרטי: {d['standard_daily_hours']:.1f} שעות. "
+            f"שעות עבודה בפועל ביום (ממוצע): {d['actual_daily_hours']:.1f} שעות."
+        )
+        sections.append(
+            f"בהתאם לחוק שעות עבודה ומנוחה, תשי\"א-1951, "
+            f"2 השעות הנוספות הראשונות מזכות בתוספת 25% (תעריף {d['rate_125']:.2f} ₪) "
+            f"ומעבר לכך בתוספת 50% (תעריף {d['rate_150']:.2f} ₪)."
+        )
+        sections.append(
+            f"תחשיב שעות נוספות שהיה צריך לשלם בכל חודש:"
+        )
+        sections.append(
+            f"שעות נוספות ביום: {d['daily_ot']:.1f} שעות "
+            f"({d['daily_ot_125']:.1f} שעות × 125% + {d['daily_ot_150']:.1f} שעות × 150%)"
+        )
+        sections.append(
+            f"ימי עבודה בחודש: {d['work_days_per_month']:.1f} ימים"
+        )
+        sections.append(
+            f"סכום שהיה צריך לשלם בחודש: "
+            f"{d['monthly_ot_125_hours']:.1f} שעות × {d['rate_125']:.2f} ₪ + "
+            f"{d['monthly_ot_150_hours']:.1f} שעות × {d['rate_150']:.2f} ₪ = "
+            f"{d['monthly_should_pay']:,.0f} ₪"
+        )
+        if d['global_ot_hours'] > 0:
+            sections.append(
+                f"שעות נוספות גלובליות ששולמו בפועל: {d['global_ot_hours']:.1f} שעות בחודש "
+                f"(שוויין: {d['monthly_paid']:,.0f} ₪)"
+            )
+            sections.append(
+                f"הפרש חודשי: {d['monthly_should_pay']:,.0f} ₪ - {d['monthly_paid']:,.0f} ₪ = "
+                f"{d['monthly_difference']:,.0f} ₪"
+            )
+        sections.append(
+            f"הפרש חודשי ({d['monthly_difference']:,.0f} ₪) × {d['months']} חודשי עבודה = "
+            f"{c['amount']:,.0f} ₪"
         )
         sections.append(
             f"לאור האמור לעיל, בהתאם לתחשיבים, {pronoun} יבקש/תבקש כי בית הדין הנכבד "
@@ -714,62 +785,86 @@ def generate_claim_text(data, calculations):
 
 
 def generate_docx(data, calculations, claim_text):
-    """Generate a Word document matching the exact format of Levin Telraz firm claims.
+    """Generate a Word document matching SKILL.md specifications exactly.
 
-    Based on analysis of the real כתב תביעה documents:
-    - Font: David 12pt throughout
-    - Body paragraphs: Justified, RTL (bidi), 1.5 line spacing, auto-numbered
-    - Section headers: Bold + Underline, not numbered
-    - Title: Heading 4 style, centered
-    - Margins: ~1.8cm left/right, small top/bottom
-    - Court header table at top with parties, case type, and amount
-    - Signature table at bottom with attorney details
+    SKILL.md specs:
+    - Page: US Letter (12240 × 15840 twips), margins top=709 right=1800 bottom=1276 left=1800
+    - Font: David 12pt (24 half-points), RTL bidi, he-IL
+    - Numbered paras: ListParagraph, numId, spacing 120/120/360 auto, ind left=-149 right=-709 hanging=425
+    - Section headers: bold+underline, NO numbering, ind left=-716 right=-709 firstLine=6
+    - Appendix refs: ◄ symbol, bold+underlined, NOT numbered
+    - Summary tables: 2-col, bidiVisual BEFORE tblW, last row shaded D9E2F3
+    - Signature: 2-col table (spacer 5649 + sig 3377), top border as sig line
     """
-    from docx.shared import Emu
-    from copy import deepcopy
     from lxml import etree
 
     doc = Document()
     WNS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 
-    # ── Page Setup ───────────────────────────────────────────────────────
+    # ── Page Setup (US Letter, exact twip margins) ───────────────────────
     for section in doc.sections:
-        section.left_margin = Cm(1.8)
-        section.right_margin = Cm(1.8)
-        section.top_margin = Cm(0.7)
-        section.bottom_margin = Cm(1.3)
+        sectPr = section._sectPr
+        pgSz = sectPr.find(qn('w:pgSz'))
+        if pgSz is None:
+            pgSz = etree.SubElement(sectPr, qn('w:pgSz'))
+        pgSz.set(qn('w:w'), '12240')
+        pgSz.set(qn('w:h'), '15840')
+
+        pgMar = sectPr.find(qn('w:pgMar'))
+        if pgMar is None:
+            pgMar = etree.SubElement(sectPr, qn('w:pgMar'))
+        pgMar.set(qn('w:top'), '709')
+        pgMar.set(qn('w:right'), '1800')
+        pgMar.set(qn('w:bottom'), '1276')
+        pgMar.set(qn('w:left'), '1800')
+        pgMar.set(qn('w:header'), '720')
+        pgMar.set(qn('w:footer'), '720')
 
     # ── Configure Default Styles ─────────────────────────────────────────
     style_normal = doc.styles['Normal']
     style_normal.font.name = 'David'
     style_normal.font.size = Pt(12)
     style_normal.font.rtl = True
-    pf = style_normal.paragraph_format
-    pf.line_spacing = 1.5
-    pf.space_before = Pt(6)
-    pf.space_after = Pt(6)
-    pf.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-    # Set bidi on Normal style
-    style_pPr = style_normal.element.get_or_add_pPr()
-    etree.SubElement(style_pPr, qn('w:bidi'))
+    # Set cs font on Normal style
+    rPr_style = style_normal.element.find(qn('w:rPr'))
+    if rPr_style is None:
+        rPr_style = etree.SubElement(style_normal.element, qn('w:rPr'))
+    rFonts_style = rPr_style.find(qn('w:rFonts'))
+    if rFonts_style is None:
+        rFonts_style = etree.SubElement(rPr_style, qn('w:rFonts'))
+    rFonts_style.set(qn('w:cs'), 'David')
+    rFonts_style.set(qn('w:eastAsia'), 'David')
+    szCs_style = rPr_style.find(qn('w:szCs'))
+    if szCs_style is None:
+        szCs_style = etree.SubElement(rPr_style, qn('w:szCs'))
+    szCs_style.set(qn('w:val'), '24')
 
-    # ── Create Numbering (auto-numbered paragraphs like the real doc) ────
-    # We need to inject numbering definitions into the document.
-    # Force creation of numbering part by adding and removing a list paragraph.
-    from docx.opc.constants import RELATIONSHIP_TYPE as RT
+    pf = style_normal.paragraph_format
+    pf.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    style_pPr = style_normal.element.get_or_add_pPr()
+    if style_pPr.find(qn('w:bidi')) is None:
+        etree.SubElement(style_pPr, qn('w:bidi'))
+    # Set spacing on Normal style via XML for exact twip values
+    sp = style_pPr.find(qn('w:spacing'))
+    if sp is None:
+        sp = etree.SubElement(style_pPr, qn('w:spacing'))
+    sp.set(qn('w:before'), '120')
+    sp.set(qn('w:after'), '120')
+    sp.set(qn('w:line'), '360')
+    sp.set(qn('w:lineRule'), 'auto')
+
+    # ── Create Numbering ─────────────────────────────────────────────────
     try:
         numbering_part = doc.part.numbering_part
     except Exception:
-        # Create a dummy list item to force numbering part creation
         dummy = doc.add_paragraph('', style='List Number')
         numbering_part = doc.part.numbering_part
-        # Remove the dummy paragraph
         dummy._element.getparent().remove(dummy._element)
     numbering_elm = numbering_part.element
 
-    # Abstract numbering definition for Hebrew decimal numbers
+    # SKILL.md numbering: decimal, "%1.", lvlJc="left", b val="0", bCs val="0", lang bidi="he-IL"
     abstract_num_xml = f'''
-    <w:abstractNum w:abstractNumId="1" xmlns:w="{WNS}">
+    <w:abstractNum w:abstractNumId="0" xmlns:w="{WNS}">
         <w:multiLevelType w:val="hybridMultilevel"/>
         <w:lvl w:ilvl="0">
             <w:start w:val="1"/>
@@ -777,12 +872,15 @@ def generate_docx(data, calculations, claim_text):
             <w:lvlText w:val="%1."/>
             <w:lvlJc w:val="left"/>
             <w:pPr>
-                <w:ind w:left="720" w:hanging="360"/>
+                <w:ind w:left="360" w:hanging="360"/>
             </w:pPr>
             <w:rPr>
                 <w:rFonts w:ascii="David" w:hAnsi="David" w:cs="David"/>
+                <w:b w:val="0"/>
+                <w:bCs w:val="0"/>
                 <w:sz w:val="24"/>
                 <w:szCs w:val="24"/>
+                <w:lang w:bidi="he-IL"/>
             </w:rPr>
         </w:lvl>
         <w:lvl w:ilvl="1">
@@ -791,12 +889,15 @@ def generate_docx(data, calculations, claim_text):
             <w:lvlText w:val="%1.%2"/>
             <w:lvlJc w:val="left"/>
             <w:pPr>
-                <w:ind w:left="1440" w:hanging="360"/>
+                <w:ind w:left="720" w:hanging="360"/>
             </w:pPr>
             <w:rPr>
                 <w:rFonts w:ascii="David" w:hAnsi="David" w:cs="David"/>
+                <w:b w:val="0"/>
+                <w:bCs w:val="0"/>
                 <w:sz w:val="24"/>
                 <w:szCs w:val="24"/>
+                <w:lang w:bidi="he-IL"/>
             </w:rPr>
         </w:lvl>
     </w:abstractNum>
@@ -805,123 +906,169 @@ def generate_docx(data, calculations, claim_text):
     numbering_elm.insert(0, abstract_num)
 
     num_xml = f'''
-    <w:num w:numId="1" xmlns:w="{WNS}">
-        <w:abstractNumId w:val="1"/>
+    <w:num w:numId="2" xmlns:w="{WNS}">
+        <w:abstractNumId w:val="0"/>
     </w:num>
     '''
     num_elem = etree.fromstring(num_xml)
     numbering_elm.append(num_elem)
 
     # ── Helper Functions ─────────────────────────────────────────────────
-    paragraph_counter = [0]  # mutable counter for numbering
 
     def _set_rtl_bidi(p):
         """Set RTL and bidi on a paragraph element."""
         pPr = p._element.get_or_add_pPr()
-        # Add bidi if not present
         if pPr.find(qn('w:bidi')) is None:
             etree.SubElement(pPr, qn('w:bidi'))
 
     def _set_run_font(run, size=12, bold=False, underline=False, font_name='David'):
-        """Configure run font properties."""
+        """Configure run font properties including complex script."""
         run.font.name = font_name
         run.font.size = Pt(size)
         run.font.bold = bold
         run.font.underline = underline
         run.font.rtl = True
-        # Set complex script font (for Hebrew)
         rPr = run._element.get_or_add_rPr()
         rFonts = rPr.find(qn('w:rFonts'))
         if rFonts is None:
             rFonts = etree.SubElement(rPr, qn('w:rFonts'))
         rFonts.set(qn('w:cs'), font_name)
-        # Set cs size
+        rFonts.set(qn('w:eastAsia'), font_name)
+        # bCs for bold complex script
+        if bold:
+            bCs = rPr.find(qn('w:bCs'))
+            if bCs is None:
+                etree.SubElement(rPr, qn('w:bCs'))
         szCs = rPr.find(qn('w:szCs'))
         if szCs is None:
             szCs = etree.SubElement(rPr, qn('w:szCs'))
         szCs.set(qn('w:val'), str(size * 2))
 
+    def _set_paragraph_spacing(p):
+        """Set SKILL.md spacing: before=120, after=120, line=360, lineRule=auto."""
+        pPr = p._element.get_or_add_pPr()
+        sp = pPr.find(qn('w:spacing'))
+        if sp is None:
+            sp = etree.SubElement(pPr, qn('w:spacing'))
+        sp.set(qn('w:before'), '120')
+        sp.set(qn('w:after'), '120')
+        sp.set(qn('w:line'), '360')
+        sp.set(qn('w:lineRule'), 'auto')
+
     def _add_numbering(p, level=0):
-        """Add auto-numbering to a paragraph."""
+        """Add auto-numbering to a paragraph with SKILL.md indentation."""
         pPr = p._element.get_or_add_pPr()
         numPr = etree.SubElement(pPr, qn('w:numPr'))
         ilvl = etree.SubElement(numPr, qn('w:ilvl'))
         ilvl.set(qn('w:val'), str(level))
-        numId = etree.SubElement(numPr, qn('w:numId'))
-        numId.set(qn('w:val'), '1')
+        numId_el = etree.SubElement(numPr, qn('w:numId'))
+        numId_el.set(qn('w:val'), '2')
+        # SKILL.md indentation for numbered paras: left=-149, right=-709, hanging=425
+        ind = pPr.find(qn('w:ind'))
+        if ind is None:
+            ind = etree.SubElement(pPr, qn('w:ind'))
+        if level == 0:
+            ind.set(qn('w:left'), '-149')
+            ind.set(qn('w:right'), '-709')
+            ind.set(qn('w:hanging'), '425')
+        else:
+            ind.set(qn('w:left'), '276')
+            ind.set(qn('w:right'), '-709')
+            ind.set(qn('w:hanging'), '425')
 
     def add_title(text):
-        """Add the main title (כתב תביעה) - centered, bold, large."""
+        """Add the main title - centered, bold, large."""
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         _set_rtl_bidi(p)
-        p.paragraph_format.space_before = Pt(12)
-        p.paragraph_format.space_after = Pt(12)
+        _set_paragraph_spacing(p)
         run = p.add_run(text)
         _set_run_font(run, size=16, bold=True)
         return p
 
     def add_section_header(text):
-        """Add a section header - bold, underlined, justified, not numbered."""
+        """Add a section header per SKILL.md: bold+underline, NOT numbered, ind left=-716 right=-709 firstLine=6."""
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         _set_rtl_bidi(p)
-        p.paragraph_format.space_before = Pt(12)
-        p.paragraph_format.space_after = Pt(6)
+        _set_paragraph_spacing(p)
+        # SKILL.md section header indentation
+        pPr = p._element.get_or_add_pPr()
+        ind = etree.SubElement(pPr, qn('w:ind'))
+        ind.set(qn('w:left'), '-716')
+        ind.set(qn('w:right'), '-709')
+        ind.set(qn('w:firstLine'), '6')
         run = p.add_run(text)
         _set_run_font(run, size=12, bold=True, underline=True)
         return p
 
     def add_numbered_para(text, level=0):
-        """Add a numbered body paragraph - justified, RTL, 1.5 spacing."""
+        """Add a numbered body paragraph per SKILL.md."""
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         _set_rtl_bidi(p)
+        _set_paragraph_spacing(p)
         _add_numbering(p, level=level)
-        p.paragraph_format.line_spacing = 1.5
-        p.paragraph_format.space_before = Pt(6)
-        p.paragraph_format.space_after = Pt(6)
         run = p.add_run(text)
         _set_run_font(run, size=12)
         return p
 
     def add_plain_para(text, alignment=WD_ALIGN_PARAGRAPH.JUSTIFY, size=12,
-                       bold=False, spacing_before=6, spacing_after=6):
-        """Add a plain (non-numbered) paragraph."""
+                       bold=False):
+        """Add a plain (non-numbered) paragraph with SKILL.md spacing."""
         p = doc.add_paragraph()
         p.alignment = alignment
         _set_rtl_bidi(p)
-        p.paragraph_format.line_spacing = 1.5
-        p.paragraph_format.space_before = Pt(spacing_before)
-        p.paragraph_format.space_after = Pt(spacing_after)
+        _set_paragraph_spacing(p)
         if text:
             run = p.add_run(text)
             _set_run_font(run, size=size, bold=bold)
         return p
 
-    def add_calculation_line(text):
-        """Add a calculation/formula line - not numbered, indented."""
+    def add_appendix_ref(text):
+        """Add appendix reference per SKILL.md: ◄ symbol, bold+underlined, NOT numbered."""
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         _set_rtl_bidi(p)
-        p.paragraph_format.line_spacing = 1.5
-        p.paragraph_format.space_before = Pt(2)
-        p.paragraph_format.space_after = Pt(2)
-        # Indent
+        _set_paragraph_spacing(p)
         pPr = p._element.get_or_add_pPr()
         ind = etree.SubElement(pPr, qn('w:ind'))
-        ind.set(qn('w:right'), '720')
+        ind.set(qn('w:left'), '-149')
+        ind.set(qn('w:right'), '-709')
+        # ◄ symbol run (bold, not underlined)
+        arrow_run = p.add_run('◄  ')
+        _set_run_font(arrow_run, size=12, bold=True, underline=False)
+        # Text run (bold + underlined)
+        text_run = p.add_run(text)
+        _set_run_font(text_run, size=12, bold=True, underline=True)
+        return p
+
+    def add_calculation_line(text):
+        """Add a calculation/formula line - not numbered."""
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        _set_rtl_bidi(p)
+        _set_paragraph_spacing(p)
+        pPr = p._element.get_or_add_pPr()
+        ind = etree.SubElement(pPr, qn('w:ind'))
+        ind.set(qn('w:left'), '-149')
+        ind.set(qn('w:right'), '-709')
         run = p.add_run(text)
         _set_run_font(run, size=12)
         return p
 
-    # ── Helper to build RTL table cell ───────────────────────────────────
     def set_cell_rtl(cell, text, bold=False, size=12, alignment=WD_ALIGN_PARAGRAPH.RIGHT):
-        """Set cell text with RTL formatting."""
+        """Set cell text with RTL formatting. No negative indents inside cells."""
         cell.text = ''
         p = cell.paragraphs[0]
         p.alignment = alignment
-        _set_rtl_bidi(p)
+        pPr = p._element.get_or_add_pPr()
+        if pPr.find(qn('w:bidi')) is None:
+            etree.SubElement(pPr, qn('w:bidi'))
+        # Ensure no negative indents in cells
+        ind = pPr.find(qn('w:ind'))
+        if ind is not None:
+            pPr.remove(ind)
         if text:
             for line_idx, line in enumerate(text.split('\n')):
                 if line_idx > 0:
@@ -929,12 +1076,108 @@ def generate_docx(data, calculations, claim_text):
                     run.add_break()
                 run = p.add_run(line)
                 _set_run_font(run, size=size, bold=bold)
-        # Set cell direction
         tc = cell._element
         tcPr = tc.find(qn('w:tcPr'))
         if tcPr is None:
             tcPr = etree.SubElement(tc, qn('w:tcPr'))
             tc.insert(0, tcPr)
+
+    def _make_table_borderless(table):
+        """Remove all borders from a table."""
+        tbl = table._element
+        tblPr = tbl.find(qn('w:tblPr'))
+        if tblPr is None:
+            tblPr = etree.SubElement(tbl, qn('w:tblPr'))
+        tblBorders = etree.SubElement(tblPr, qn('w:tblBorders'))
+        for bn in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+            b = etree.SubElement(tblBorders, qn(f'w:{bn}'))
+            b.set(qn('w:val'), 'none')
+            b.set(qn('w:sz'), '0')
+            b.set(qn('w:space'), '0')
+            b.set(qn('w:color'), 'auto')
+        return tblPr
+
+    def _set_table_bidi(tblPr):
+        """Add bidiVisual BEFORE tblW per SKILL.md."""
+        # Remove existing bidiVisual if any
+        for existing in tblPr.findall(qn('w:bidiVisual')):
+            tblPr.remove(existing)
+        bidi = etree.SubElement(tblPr, qn('w:bidiVisual'))
+        # Move bidiVisual to be before tblW
+        tblW = tblPr.find(qn('w:tblW'))
+        if tblW is not None:
+            tblPr.remove(bidi)
+            tblPr.insert(list(tblPr).index(tblW), bidi)
+        else:
+            # bidiVisual is already at the end, which is fine if no tblW
+            pass
+
+    def add_summary_table(claims_dict, total_amount):
+        """Add a 2-column summary table per SKILL.md: component name (bold, right) | amount (centered).
+        Last row shaded D9E2F3."""
+        num_rows = len(claims_dict) + 1  # +1 for total row
+        tbl = doc.add_table(rows=num_rows, cols=2)
+
+        # Set table properties
+        tblEl = tbl._element
+        tblPr = tblEl.find(qn('w:tblPr'))
+        if tblPr is None:
+            tblPr = etree.SubElement(tblEl, qn('w:tblPr'))
+
+        # bidiVisual BEFORE tblW
+        bidi_v = etree.SubElement(tblPr, qn('w:bidiVisual'))
+        tblW = etree.SubElement(tblPr, qn('w:tblW'))
+        tblW.set(qn('w:type'), 'dxa')
+        tblW.set(qn('w:w'), '9026')
+
+        # Grid columns: right wider (5513), left narrower (3513)
+        tblGrid = tblEl.find(qn('w:tblGrid'))
+        if tblGrid is None:
+            tblGrid = etree.SubElement(tblEl, qn('w:tblGrid'))
+        else:
+            for gc in tblGrid.findall(qn('w:gridCol')):
+                tblGrid.remove(gc)
+        gc1 = etree.SubElement(tblGrid, qn('w:gridCol'))
+        gc1.set(qn('w:w'), '5513')
+        gc2 = etree.SubElement(tblGrid, qn('w:gridCol'))
+        gc2.set(qn('w:w'), '3513')
+
+        # Table borders (all single)
+        tblBorders = etree.SubElement(tblPr, qn('w:tblBorders'))
+        for bn in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+            b = etree.SubElement(tblBorders, qn(f'w:{bn}'))
+            b.set(qn('w:val'), 'single')
+            b.set(qn('w:sz'), '4')
+            b.set(qn('w:space'), '0')
+            b.set(qn('w:color'), 'auto')
+
+        # Fill rows
+        for i, (key, claim) in enumerate(claims_dict.items()):
+            set_cell_rtl(tbl.rows[i].cells[0], claim['name'], bold=True, size=12,
+                         alignment=WD_ALIGN_PARAGRAPH.RIGHT)
+            set_cell_rtl(tbl.rows[i].cells[1], f"{claim['amount']:,.0f} ₪", size=12,
+                         alignment=WD_ALIGN_PARAGRAPH.CENTER)
+
+        # Total row (last)
+        last_row = num_rows - 1
+        set_cell_rtl(tbl.rows[last_row].cells[0], 'סה"כ', bold=True, size=12,
+                     alignment=WD_ALIGN_PARAGRAPH.RIGHT)
+        set_cell_rtl(tbl.rows[last_row].cells[1], f"{total_amount:,.0f} ₪", bold=True, size=12,
+                     alignment=WD_ALIGN_PARAGRAPH.CENTER)
+
+        # Shade last row D9E2F3
+        for cell in tbl.rows[last_row].cells:
+            tc = cell._element
+            tcPr = tc.find(qn('w:tcPr'))
+            if tcPr is None:
+                tcPr = etree.SubElement(tc, qn('w:tcPr'))
+                tc.insert(0, tcPr)
+            shd = etree.SubElement(tcPr, qn('w:shd'))
+            shd.set(qn('w:val'), 'clear')
+            shd.set(qn('w:color'), 'auto')
+            shd.set(qn('w:fill'), 'D9E2F3')
+
+        return tbl
 
     # ── Data Extraction ──────────────────────────────────────────────────
     plaintiff_name = data.get("plaintiff_name", "")
@@ -943,6 +1186,7 @@ def generate_docx(data, calculations, claim_text):
     gender = data.get("gender", "male")
     pronoun = "התובע" if gender == "male" else "התובעת"
     total = calculations["total"]
+    claims = calculations["claims"]
     attorney_name = data.get("attorney_name", "")
     attorney_id = data.get("attorney_id", "")
 
@@ -951,57 +1195,41 @@ def generate_docx(data, calculations, claim_text):
     # ══════════════════════════════════════════════════════════════════════
 
     # ── Court Header Table (top of document) ─────────────────────────────
-    # Format: בס"ד | court name on right
     header_table = doc.add_table(rows=4, cols=2)
     header_table.autofit = True
 
-    # Row 0: בס"ד on left, empty right
     set_cell_rtl(header_table.rows[0].cells[0], 'בס"ד', size=11)
     set_cell_rtl(header_table.rows[0].cells[1], '', size=11)
 
-    # Row 1: Court name centered across
     set_cell_rtl(header_table.rows[1].cells[0], court_name, bold=True, size=13,
                  alignment=WD_ALIGN_PARAGRAPH.CENTER)
     set_cell_rtl(header_table.rows[1].cells[1], '', size=11)
-    # Merge row 1 cells
     header_table.rows[1].cells[0].merge(header_table.rows[1].cells[1])
 
-    # Row 2: Case type
     set_cell_rtl(header_table.rows[2].cells[0], 'מהות התביעה: הצהרתית וכספית',
                  size=11, alignment=WD_ALIGN_PARAGRAPH.CENTER)
     set_cell_rtl(header_table.rows[2].cells[1], '', size=11)
     header_table.rows[2].cells[0].merge(header_table.rows[2].cells[1])
 
-    # Row 3: Amount
     amount_text = f'סכום התביעה: {total:,.0f} ₪ קרן (לא כולל הצמדה וריבית, שכ"ט עו"ד והוצאות)'
     set_cell_rtl(header_table.rows[3].cells[0], amount_text,
                  bold=True, size=11, alignment=WD_ALIGN_PARAGRAPH.CENTER)
     set_cell_rtl(header_table.rows[3].cells[1], '', size=11)
     header_table.rows[3].cells[0].merge(header_table.rows[3].cells[1])
 
-    # Remove table borders
-    tbl = header_table._element
-    tblPr = tbl.find(qn('w:tblPr'))
-    if tblPr is None:
-        tblPr = etree.SubElement(tbl, qn('w:tblPr'))
-    tblBorders = etree.SubElement(tblPr, qn('w:tblBorders'))
-    for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
-        border = etree.SubElement(tblBorders, qn(f'w:{border_name}'))
-        border.set(qn('w:val'), 'none')
-        border.set(qn('w:sz'), '0')
-        border.set(qn('w:space'), '0')
-        border.set(qn('w:color'), 'auto')
+    htblPr = _make_table_borderless(header_table)
+    _set_table_bidi(htblPr)
 
-    # Set RTL on table
-    bidi_tbl = etree.SubElement(tblPr, qn('w:bidiVisual'))
+    # ── Header Summary Table (same as end summary, per SKILL.md) ─────────
+    add_plain_para('')
+    add_summary_table(claims, total)
 
-    add_plain_para('', spacing_before=2, spacing_after=2)
+    add_plain_para('')
 
     # ── Parties Block ────────────────────────────────────────────────────
     parties_table = doc.add_table(rows=5, cols=3)
     parties_table.autofit = True
 
-    # Plaintiff
     set_cell_rtl(parties_table.rows[0].cells[2], plaintiff_name, bold=True, size=12)
     set_cell_rtl(parties_table.rows[0].cells[1], '', size=12)
     set_cell_rtl(parties_table.rows[0].cells[0], '', size=12)
@@ -1010,13 +1238,11 @@ def generate_docx(data, calculations, claim_text):
     set_cell_rtl(parties_table.rows[1].cells[1], '', size=12)
     set_cell_rtl(parties_table.rows[1].cells[0], '', size=12)
 
-    # vs
     set_cell_rtl(parties_table.rows[2].cells[1], '- נ ג ד -', bold=True, size=12,
                  alignment=WD_ALIGN_PARAGRAPH.CENTER)
     set_cell_rtl(parties_table.rows[2].cells[0], '', size=12)
     set_cell_rtl(parties_table.rows[2].cells[2], '', size=12)
 
-    # Defendant
     set_cell_rtl(parties_table.rows[3].cells[2], defendant_name, bold=True, size=12)
     set_cell_rtl(parties_table.rows[3].cells[1], '', size=12)
     set_cell_rtl(parties_table.rows[3].cells[0], '', size=12)
@@ -1026,19 +1252,8 @@ def generate_docx(data, calculations, claim_text):
     set_cell_rtl(parties_table.rows[4].cells[1], '', size=12)
     set_cell_rtl(parties_table.rows[4].cells[0], '', size=12)
 
-    # Remove borders from parties table
-    ptbl = parties_table._element
-    ptblPr = ptbl.find(qn('w:tblPr'))
-    if ptblPr is None:
-        ptblPr = etree.SubElement(ptbl, qn('w:tblPr'))
-    ptblBorders = etree.SubElement(ptblPr, qn('w:tblBorders'))
-    for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
-        border = etree.SubElement(ptblBorders, qn(f'w:{border_name}'))
-        border.set(qn('w:val'), 'none')
-        border.set(qn('w:sz'), '0')
-        border.set(qn('w:space'), '0')
-        border.set(qn('w:color'), 'auto')
-    etree.SubElement(ptblPr, qn('w:bidiVisual'))
+    ptblPr = _make_table_borderless(parties_table)
+    _set_table_bidi(ptblPr)
 
     # ── Title ────────────────────────────────────────────────────────────
     add_title('כ ת ב    ת ב י ע ה')
@@ -1054,59 +1269,118 @@ def generate_docx(data, calculations, claim_text):
         "ניכויים שלא כדין – תגמולי עובד", "פיצויי הלנת שכר",
         "פיצוי בגין עוגמת נפש", "מסירת מסמכי גמר חשבון",
         "עילות התביעה", "הסעדים המבוקשים",
+        "תחשיב שעות נוספות שהיה צריך לשלם בכל חודש:",
     }
 
     lines = claim_text.split("\n")
+    in_summary = False
     for line in lines:
         stripped = line.strip()
         if not stripped:
-            continue  # Skip empty lines (spacing handled by paragraph formatting)
+            continue
         elif stripped == "כ ת ב    ת ב י ע ה":
-            continue  # Already added as title
-        elif stripped in section_headers or stripped == "סיכום רכיבי התביעה:":
+            continue
+        elif stripped == "סיכום רכיבי התביעה:":
             add_section_header(stripped)
-        elif stripped.startswith("•"):
-            # Bullet point in summary - use sub-numbering
-            add_numbered_para(stripped.lstrip("• "), level=1)
-        elif any(c in stripped for c in ['=', '*']) and '₪' in stripped and '(' in stripped:
-            # Calculation formula line
+            in_summary = True
+            continue
+        elif in_summary and stripped.startswith("•"):
+            continue  # Skip bullet items; we'll use summary table instead
+        elif in_summary and not stripped.startswith("•") and "סה\"כ סכום התביעה" not in stripped:
+            in_summary = False
+            # Fall through to normal processing
+        elif "סה\"כ סכום התביעה" in stripped:
+            continue  # Skip; shown in summary table
+        if stripped in section_headers:
+            add_section_header(stripped)
+        elif stripped.startswith("תלושי שכר") and "נספח" in stripped:
+            add_appendix_ref(stripped)
+        elif any(c in stripped for c in ['=', '×']) and '₪' in stripped:
             add_calculation_line(stripped)
         else:
-            # Regular numbered paragraph
             add_numbered_para(stripped)
 
-    # ── Signature Table ──────────────────────────────────────────────────
-    add_plain_para('', spacing_before=6, spacing_after=2)
+    # ── End Summary Table (must match header summary) ────────────────────
+    add_section_header("סיכום רכיבי התביעה")
+    add_summary_table(claims, total)
 
-    # Power of attorney note
-    add_plain_para('*ייפוי כוח מצורף לכתב התביעה', bold=True, size=11,
-                   spacing_before=12, spacing_after=6)
+    add_plain_para(
+        f'סה"כ סכום התביעה: {total:,.0f} ₪ קרן (לא כולל הצמדה וריבית, שכ"ט עו"ד והוצאות)',
+        bold=True
+    )
 
-    sig_table = doc.add_table(rows=1, cols=3)
-    sig_table.autofit = True
+    # Final legal paragraphs from claim text (after the summary section)
+    found_summary_end = False
+    for line in lines:
+        stripped = line.strip()
+        if "סה\"כ סכום התביעה" in stripped:
+            found_summary_end = True
+            continue
+        if found_summary_end and stripped:
+            add_numbered_para(stripped)
 
+    # ── Power of Attorney Note ───────────────────────────────────────────
+    add_appendix_ref('ייפוי כוח מצורף לכתב התביעה')
+
+    # ── Signature Table (2-col: spacer 5649 + sig 3377, per SKILL.md) ────
+    add_plain_para('')
+
+    sig_table = doc.add_table(rows=1, cols=2)
+    sig_tbl_el = sig_table._element
+    sig_tblPr = sig_tbl_el.find(qn('w:tblPr'))
+    if sig_tblPr is None:
+        sig_tblPr = etree.SubElement(sig_tbl_el, qn('w:tblPr'))
+
+    # bidiVisual BEFORE tblW
+    sig_bidi = etree.SubElement(sig_tblPr, qn('w:bidiVisual'))
+    sig_tblW = etree.SubElement(sig_tblPr, qn('w:tblW'))
+    sig_tblW.set(qn('w:type'), 'dxa')
+    sig_tblW.set(qn('w:w'), '9026')
+
+    # Remove borders
+    sig_borders = etree.SubElement(sig_tblPr, qn('w:tblBorders'))
+    for bn in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
+        b = etree.SubElement(sig_borders, qn(f'w:{bn}'))
+        b.set(qn('w:val'), 'none')
+        b.set(qn('w:sz'), '0')
+        b.set(qn('w:space'), '0')
+        b.set(qn('w:color'), 'auto')
+
+    # Grid: spacer 5649 + sig 3377
+    sig_grid = sig_tbl_el.find(qn('w:tblGrid'))
+    if sig_grid is None:
+        sig_grid = etree.SubElement(sig_tbl_el, qn('w:tblGrid'))
+    else:
+        for gc in sig_grid.findall(qn('w:gridCol')):
+            sig_grid.remove(gc)
+    gc1 = etree.SubElement(sig_grid, qn('w:gridCol'))
+    gc1.set(qn('w:w'), '5649')
+    gc2 = etree.SubElement(sig_grid, qn('w:gridCol'))
+    gc2.set(qn('w:w'), '3377')
+
+    # Spacer cell (empty)
+    set_cell_rtl(sig_table.rows[0].cells[0], '', size=12)
+
+    # Signature cell with top border (signature line)
+    sig_cell = sig_table.rows[0].cells[1]
     if attorney_name and attorney_id:
         sig_text = f'{attorney_name}, עו"ד\nמ.ר. {attorney_id}\nב"כ {pronoun}'
     else:
         sig_text = f'__________________\nב"כ {pronoun}'
+    set_cell_rtl(sig_cell, sig_text, size=12, alignment=WD_ALIGN_PARAGRAPH.CENTER)
 
-    set_cell_rtl(sig_table.rows[0].cells[2], sig_text, size=12)
-    set_cell_rtl(sig_table.rows[0].cells[1], '', size=12)
-    set_cell_rtl(sig_table.rows[0].cells[0], '', size=12)
-
-    # Remove borders from signature table
-    stbl = sig_table._element
-    stblPr = stbl.find(qn('w:tblPr'))
-    if stblPr is None:
-        stblPr = etree.SubElement(stbl, qn('w:tblPr'))
-    stblBorders = etree.SubElement(stblPr, qn('w:tblBorders'))
-    for border_name in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
-        border = etree.SubElement(stblBorders, qn(f'w:{border_name}'))
-        border.set(qn('w:val'), 'none')
-        border.set(qn('w:sz'), '0')
-        border.set(qn('w:space'), '0')
-        border.set(qn('w:color'), 'auto')
-    etree.SubElement(stblPr, qn('w:bidiVisual'))
+    # Add top border to signature cell (serves as signature line)
+    sig_tc = sig_cell._element
+    sig_tcPr = sig_tc.find(qn('w:tcPr'))
+    if sig_tcPr is None:
+        sig_tcPr = etree.SubElement(sig_tc, qn('w:tcPr'))
+        sig_tc.insert(0, sig_tcPr)
+    sig_tcBorders = etree.SubElement(sig_tcPr, qn('w:tcBorders'))
+    top_border = etree.SubElement(sig_tcBorders, qn('w:top'))
+    top_border.set(qn('w:val'), 'single')
+    top_border.set(qn('w:sz'), '4')
+    top_border.set(qn('w:space'), '0')
+    top_border.set(qn('w:color'), 'auto')
 
     return doc
 
