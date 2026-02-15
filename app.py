@@ -1300,16 +1300,16 @@ def generate_docx(data, calculations, claim_text):
     # BUILD THE DOCUMENT — Cover Page (Enbar Shachar format)
     # ══════════════════════════════════════════════════════════════════════
 
-    # ── Table 1: Top Header (INVISIBLE borders) ──────────────────────────
-    # 2 columns: RIGHT = סע"ש/בפני, LEFT = court name
-    # In bidiVisual RTL table: cell[0] renders on RIGHT, cell[1] on LEFT
+    # ── Table 1: Top Header (INVISIBLE borders, NO bidiVisual) ─────────
+    # Without bidiVisual: cell[0]=LEFT, cell[1]=RIGHT (standard LTR layout)
+    # We want: court name on LEFT, סע"ש/בפני on RIGHT
     hdr_tbl = doc.add_table(rows=1, cols=2)
     hdr_el = hdr_tbl._element
     hdr_tblPr = hdr_el.find(qn('w:tblPr'))
     if hdr_tblPr is None:
         hdr_tblPr = etree.SubElement(hdr_el, qn('w:tblPr'))
 
-    etree.SubElement(hdr_tblPr, qn('w:bidiVisual'))
+    # NO bidiVisual — so cell[0] = left side, cell[1] = right side
     hdr_tblW = etree.SubElement(hdr_tblPr, qn('w:tblW'))
     hdr_tblW.set(qn('w:type'), 'dxa')
     hdr_tblW.set(qn('w:w'), '9026')
@@ -1327,14 +1327,14 @@ def generate_docx(data, calculations, claim_text):
         gc = etree.SubElement(hdr_grid, qn('w:gridCol'))
         gc.set(qn('w:w'), w)
 
-    # cell[0] = RIGHT side: סע"ש and בפני
-    set_cell_multiline(hdr_tbl.rows[0].cells[0], [
+    # cell[0] = LEFT side: court name
+    set_cell_rtl(hdr_tbl.rows[0].cells[0], court_name, bold=True, size=12,
+                 alignment=WD_ALIGN_PARAGRAPH.LEFT)
+    # cell[1] = RIGHT side: סע"ש and בפני
+    set_cell_multiline(hdr_tbl.rows[0].cells[1], [
         ('סע"ש ________', False, 11, WD_ALIGN_PARAGRAPH.RIGHT),
         ('בפני _________', False, 11, WD_ALIGN_PARAGRAPH.RIGHT),
     ])
-    # cell[1] = LEFT side: court name
-    set_cell_rtl(hdr_tbl.rows[0].cells[1], court_name, bold=True, size=12,
-                 alignment=WD_ALIGN_PARAGRAPH.LEFT)
 
     # ── Table 2: Parties Section (VISIBLE borders) ───────────────────────
     # Rows: בעניין label, plaintiff, נגד, defendant, מהות/סכום
@@ -1397,9 +1397,16 @@ def generate_docx(data, calculations, claim_text):
         plaintiff_lines.append((firm_email, False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
 
     set_cell_multiline(parties_tbl.rows[1].cells[0], plaintiff_lines)
-    # Label: bold "התובע/ת" right-aligned
+    # Label: bold "התובע/ת" right-aligned, vertically aligned to BOTTOM
     set_cell_rtl(parties_tbl.rows[1].cells[1], pronoun, bold=True, size=12,
                  alignment=WD_ALIGN_PARAGRAPH.RIGHT)
+    # Set vertical alignment to bottom
+    tc1_pr = parties_tbl.rows[1].cells[1]._element.find(qn('w:tcPr'))
+    if tc1_pr is None:
+        tc1_pr = etree.SubElement(parties_tbl.rows[1].cells[1]._element, qn('w:tcPr'))
+        parties_tbl.rows[1].cells[1]._element.insert(0, tc1_pr)
+    vAlign1 = etree.SubElement(tc1_pr, qn('w:vAlign'))
+    vAlign1.set(qn('w:val'), 'bottom')
 
     # Row 2: "- נגד -" centered across both cols
     set_cell_rtl(parties_tbl.rows[2].cells[0], '- נגד -', bold=True, size=12,
@@ -1417,6 +1424,13 @@ def generate_docx(data, calculations, claim_text):
     set_cell_multiline(parties_tbl.rows[3].cells[0], defendant_lines)
     set_cell_rtl(parties_tbl.rows[3].cells[1], defendant_label, bold=True, size=12,
                  alignment=WD_ALIGN_PARAGRAPH.RIGHT)
+    # Set vertical alignment to bottom
+    tc3_pr = parties_tbl.rows[3].cells[1]._element.find(qn('w:tcPr'))
+    if tc3_pr is None:
+        tc3_pr = etree.SubElement(parties_tbl.rows[3].cells[1]._element, qn('w:tcPr'))
+        parties_tbl.rows[3].cells[1]._element.insert(0, tc3_pr)
+    vAlign3 = etree.SubElement(tc3_pr, qn('w:vAlign'))
+    vAlign3.set(qn('w:val'), 'bottom')
 
     # Row 4: מהות התביעה / סכום התביעה in a single row
     amount_str = f'{total:,.0f} ₪'
