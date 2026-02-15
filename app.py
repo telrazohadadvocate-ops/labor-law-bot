@@ -1157,9 +1157,8 @@ def generate_docx(data, calculations, claim_text):
             pass
 
     def add_summary_table(claims_dict, total_amount):
-        """Add a 2-column summary table per SKILL.md: component name (bold, right) | amount (centered).
-        Last row shaded D9E2F3."""
-        num_rows = len(claims_dict) + 1  # +1 for total row
+        """Add a 2-column summary table with header row, visible borders, blue header."""
+        num_rows = len(claims_dict) + 2  # +1 header row, +1 total row
         tbl = doc.add_table(rows=num_rows, cols=2)
 
         # Set table properties
@@ -1169,7 +1168,7 @@ def generate_docx(data, calculations, claim_text):
             tblPr = etree.SubElement(tblEl, qn('w:tblPr'))
 
         # bidiVisual BEFORE tblW
-        bidi_v = etree.SubElement(tblPr, qn('w:bidiVisual'))
+        etree.SubElement(tblPr, qn('w:bidiVisual'))
         tblW = etree.SubElement(tblPr, qn('w:tblW'))
         tblW.set(qn('w:type'), 'dxa')
         tblW.set(qn('w:w'), '9026')
@@ -1186,31 +1185,23 @@ def generate_docx(data, calculations, claim_text):
         gc2 = etree.SubElement(tblGrid, qn('w:gridCol'))
         gc2.set(qn('w:w'), '3513')
 
-        # Table borders (all single)
+        # Table borders (all single, visible)
         tblBorders = etree.SubElement(tblPr, qn('w:tblBorders'))
         for bn in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
             b = etree.SubElement(tblBorders, qn(f'w:{bn}'))
             b.set(qn('w:val'), 'single')
             b.set(qn('w:sz'), '4')
             b.set(qn('w:space'), '0')
-            b.set(qn('w:color'), 'auto')
+            b.set(qn('w:color'), '000000')
 
-        # Fill rows: right col = component name (bold, right-aligned), left col = amount (left-aligned)
-        for i, (key, claim) in enumerate(claims_dict.items()):
-            set_cell_rtl(tbl.rows[i].cells[0], claim['name'], bold=True, size=12,
-                         alignment=WD_ALIGN_PARAGRAPH.RIGHT)
-            set_cell_rtl(tbl.rows[i].cells[1], f"{claim['amount']:,.0f} ₪", size=12,
-                         alignment=WD_ALIGN_PARAGRAPH.LEFT)
-
-        # Total row (last)
-        last_row = num_rows - 1
-        set_cell_rtl(tbl.rows[last_row].cells[0], 'סה"כ', bold=True, size=12,
+        # Row 0: Header row (blue background, white text)
+        set_cell_rtl(tbl.rows[0].cells[0], 'רכיב תביעה', bold=True, size=12,
                      alignment=WD_ALIGN_PARAGRAPH.RIGHT)
-        set_cell_rtl(tbl.rows[last_row].cells[1], f"{total_amount:,.0f} ₪", bold=True, size=12,
+        set_cell_rtl(tbl.rows[0].cells[1], 'סכום (₪)', bold=True, size=12,
                      alignment=WD_ALIGN_PARAGRAPH.LEFT)
 
-        # Shade last row D9E2F3
-        for cell in tbl.rows[last_row].cells:
+        # Shade header row blue (1A365D)
+        def _shade_cell(cell, fill_color, font_color=None):
             tc = cell._element
             tcPr = tc.find(qn('w:tcPr'))
             if tcPr is None:
@@ -1219,98 +1210,233 @@ def generate_docx(data, calculations, claim_text):
             shd = etree.SubElement(tcPr, qn('w:shd'))
             shd.set(qn('w:val'), 'clear')
             shd.set(qn('w:color'), 'auto')
-            shd.set(qn('w:fill'), 'D9E2F3')
+            shd.set(qn('w:fill'), fill_color)
+            if font_color:
+                for run in cell.paragraphs[0].runs:
+                    rPr = run._element.get_or_add_rPr()
+                    color = rPr.find(qn('w:color'))
+                    if color is None:
+                        color = etree.SubElement(rPr, qn('w:color'))
+                    color.set(qn('w:val'), font_color)
+
+        _shade_cell(tbl.rows[0].cells[0], '1A365D', 'FFFFFF')
+        _shade_cell(tbl.rows[0].cells[1], '1A365D', 'FFFFFF')
+
+        # Data rows: right col = component name (bold, right-aligned), left col = amount
+        for i, (key, claim) in enumerate(claims_dict.items()):
+            row_idx = i + 1
+            set_cell_rtl(tbl.rows[row_idx].cells[0], claim['name'], bold=True, size=12,
+                         alignment=WD_ALIGN_PARAGRAPH.RIGHT)
+            set_cell_rtl(tbl.rows[row_idx].cells[1], f"{claim['amount']:,.0f} ₪", size=12,
+                         alignment=WD_ALIGN_PARAGRAPH.LEFT)
+
+        # Total row (last) - shaded light blue
+        last_row = num_rows - 1
+        set_cell_rtl(tbl.rows[last_row].cells[0], 'סה"כ', bold=True, size=12,
+                     alignment=WD_ALIGN_PARAGRAPH.RIGHT)
+        set_cell_rtl(tbl.rows[last_row].cells[1], f"{total_amount:,.0f} ₪", bold=True, size=12,
+                     alignment=WD_ALIGN_PARAGRAPH.LEFT)
+        _shade_cell(tbl.rows[last_row].cells[0], 'D9E2F3')
+        _shade_cell(tbl.rows[last_row].cells[1], 'D9E2F3')
 
         return tbl
 
     # ── Data Extraction ──────────────────────────────────────────────────
     plaintiff_name = data.get("plaintiff_name", "")
+    plaintiff_id = data.get("plaintiff_id", "")
+    plaintiff_address = data.get("plaintiff_address", "")
     defendant_name = data.get("defendant_name", "")
-    court_name = data.get("court_header", "בית הדין האזורי לעבודה")
+    defendant_id = data.get("defendant_id", "")
+    defendant_address = data.get("defendant_address", "")
+    court_name = data.get("court_header", "בית הדין האזורי לעבודה בתל אביב")
     gender = data.get("gender", "male")
     pronoun = "התובע" if gender == "male" else "התובעת"
     total = calculations["total"]
     claims = calculations["claims"]
     attorney_name = data.get("attorney_name", "")
     attorney_id = data.get("attorney_id", "")
+    firm_name = data.get("firm_name", "")
+    firm_address = data.get("firm_address", "")
+    firm_phone = data.get("firm_phone", "")
+    firm_fax = data.get("firm_fax", "")
+    firm_email = data.get("firm_email", "")
+
+    defendant_label = "הנתבע" if data.get("defendant_type") == "individual" else "הנתבעת"
+
+    # ── Helper: add multiple paragraphs to a cell ────────────────────────
+    def set_cell_multiline(cell, lines_spec):
+        """Set cell with multiple paragraphs. lines_spec: list of (text, bold, size, alignment) tuples."""
+        cell.text = ''
+        for idx, (text, bold, size, alignment) in enumerate(lines_spec):
+            if idx == 0:
+                p = cell.paragraphs[0]
+            else:
+                p = cell.add_paragraph()
+            p.alignment = alignment
+            pPr = p._element.get_or_add_pPr()
+            if pPr.find(qn('w:bidi')) is None:
+                etree.SubElement(pPr, qn('w:bidi'))
+            # Remove negative indents
+            ind = pPr.find(qn('w:ind'))
+            if ind is not None:
+                pPr.remove(ind)
+            # Compact spacing
+            sp = pPr.find(qn('w:spacing'))
+            if sp is None:
+                sp = etree.SubElement(pPr, qn('w:spacing'))
+            sp.set(qn('w:before'), '20')
+            sp.set(qn('w:after'), '20')
+            sp.set(qn('w:line'), '240')
+            sp.set(qn('w:lineRule'), 'auto')
+            if text:
+                run = p.add_run(text)
+                _set_run_font(run, size=size, bold=bold)
 
     # ══════════════════════════════════════════════════════════════════════
-    # BUILD THE DOCUMENT
+    # BUILD THE DOCUMENT — Cover Page (Enbar Shachar format)
     # ══════════════════════════════════════════════════════════════════════
 
-    # ── Court Name (centered, bold, at top) ──────────────────────────────
-    add_plain_para(court_name, alignment=WD_ALIGN_PARAGRAPH.CENTER, size=14, bold=True)
+    # ── Main Header/Parties Table: 3 columns × 6 rows ───────────────────
+    # Grid: col0=2562 (case/label) | col1=5093 (content) | col2=2410 (court/labels)
+    header_tbl = doc.add_table(rows=6, cols=3)
 
-    # ── Case nature and amount (centered, RTL) ───────────────────────────
-    add_plain_para('מהות התביעה: הצהרתית וכספית', alignment=WD_ALIGN_PARAGRAPH.CENTER, size=12)
-    amount_text = f'סכום התביעה: {total:,.0f} ₪ קרן (לא כולל הצמדה וריבית, שכ"ט עו"ד והוצאות)'
-    add_plain_para(amount_text, alignment=WD_ALIGN_PARAGRAPH.CENTER, size=12, bold=True)
+    ht_el = header_tbl._element
+    ht_tblPr = ht_el.find(qn('w:tblPr'))
+    if ht_tblPr is None:
+        ht_tblPr = etree.SubElement(ht_el, qn('w:tblPr'))
 
-    # ── Header Summary Table (financial breakdown) ───────────────────────
-    add_plain_para('')
-    add_summary_table(claims, total)
-    add_plain_para('')
+    # bidiVisual + width
+    etree.SubElement(ht_tblPr, qn('w:bidiVisual'))
+    ht_tblW = etree.SubElement(ht_tblPr, qn('w:tblW'))
+    ht_tblW.set(qn('w:type'), 'dxa')
+    ht_tblW.set(qn('w:w'), '10065')
 
-    # ── Parties Block (plaintiff / נגד / defendant) ──────────────────────
-    # Use a 2-column borderless table: right side for party info, left empty spacer
-    parties_table = doc.add_table(rows=5, cols=2)
-
-    # Set table properties: bidiVisual, full width, borderless
-    p_tbl_el = parties_table._element
-    p_tblPr = p_tbl_el.find(qn('w:tblPr'))
-    if p_tblPr is None:
-        p_tblPr = etree.SubElement(p_tbl_el, qn('w:tblPr'))
-    etree.SubElement(p_tblPr, qn('w:bidiVisual'))
-    p_tblW = etree.SubElement(p_tblPr, qn('w:tblW'))
-    p_tblW.set(qn('w:type'), 'dxa')
-    p_tblW.set(qn('w:w'), '9026')
-
-    # Grid: right column 5000 (party info), left column 4026 (spacer)
-    p_grid = p_tbl_el.find(qn('w:tblGrid'))
-    if p_grid is None:
-        p_grid = etree.SubElement(p_tbl_el, qn('w:tblGrid'))
-    else:
-        for gc in p_grid.findall(qn('w:gridCol')):
-            p_grid.remove(gc)
-    gc1 = etree.SubElement(p_grid, qn('w:gridCol'))
-    gc1.set(qn('w:w'), '5000')
-    gc2 = etree.SubElement(p_grid, qn('w:gridCol'))
-    gc2.set(qn('w:w'), '4026')
-
-    # Remove all borders
-    p_borders = etree.SubElement(p_tblPr, qn('w:tblBorders'))
+    # No table-level borders (borders applied per-cell where needed)
+    ht_borders = etree.SubElement(ht_tblPr, qn('w:tblBorders'))
     for bn in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
-        b = etree.SubElement(p_borders, qn(f'w:{bn}'))
+        b = etree.SubElement(ht_borders, qn(f'w:{bn}'))
         b.set(qn('w:val'), 'none')
         b.set(qn('w:sz'), '0')
         b.set(qn('w:space'), '0')
         b.set(qn('w:color'), 'auto')
 
-    # Row 0: Plaintiff name (right-aligned, bold)
-    set_cell_rtl(parties_table.rows[0].cells[0], plaintiff_name, bold=True, size=12,
-                 alignment=WD_ALIGN_PARAGRAPH.RIGHT)
-    set_cell_rtl(parties_table.rows[0].cells[1], '', size=12)
+    # Grid columns
+    ht_grid = ht_el.find(qn('w:tblGrid'))
+    if ht_grid is None:
+        ht_grid = etree.SubElement(ht_el, qn('w:tblGrid'))
+    else:
+        for gc in ht_grid.findall(qn('w:gridCol')):
+            ht_grid.remove(gc)
+    for w in ['2562', '5093', '2410']:
+        gc = etree.SubElement(ht_grid, qn('w:gridCol'))
+        gc.set(qn('w:w'), w)
 
-    # Row 1: Plaintiff label
-    set_cell_rtl(parties_table.rows[1].cells[0], pronoun, size=12,
-                 alignment=WD_ALIGN_PARAGRAPH.RIGHT)
-    set_cell_rtl(parties_table.rows[1].cells[1], '', size=12)
+    # ── Row 0: Case fields (right) | empty | Court name (left) ──────────
+    set_cell_multiline(header_tbl.rows[0].cells[0], [
+        ('סע"ש ________', False, 11, WD_ALIGN_PARAGRAPH.RIGHT),
+        ('בפני _________', False, 11, WD_ALIGN_PARAGRAPH.RIGHT),
+    ])
+    set_cell_rtl(header_tbl.rows[0].cells[1], '', size=11)
+    set_cell_rtl(header_tbl.rows[0].cells[2], court_name, bold=True, size=12,
+                 alignment=WD_ALIGN_PARAGRAPH.LEFT)
 
-    # Row 2: "- נ ג ד -" centered across full width
-    parties_table.rows[2].cells[0].merge(parties_table.rows[2].cells[1])
-    set_cell_rtl(parties_table.rows[2].cells[0], '- נ ג ד -', bold=True, size=14,
+    # ── Row 1: empty | empty | "בעניין:" ────────────────────────────────
+    set_cell_rtl(header_tbl.rows[1].cells[0], '', size=11)
+    set_cell_rtl(header_tbl.rows[1].cells[1], '', size=11)
+    set_cell_rtl(header_tbl.rows[1].cells[2], 'בעניין:', bold=True, size=12,
+                 alignment=WD_ALIGN_PARAGRAPH.LEFT)
+
+    # ── Row 2: label (right) | Plaintiff details (center) | empty ────────
+    # Build plaintiff info lines
+    plaintiff_lines = []
+    name_id = f'{plaintiff_name}, ת.ז. {plaintiff_id}' if plaintiff_id else plaintiff_name
+    plaintiff_lines.append((name_id, True, 12, WD_ALIGN_PARAGRAPH.RIGHT))
+    if plaintiff_address:
+        plaintiff_lines.append((plaintiff_address, False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
+    if attorney_name:
+        plaintiff_lines.append((f'באמצעות ב"כ עוה"ד {attorney_name}', False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
+    if firm_address:
+        # Split firm address if it has comma-separated parts
+        for part in firm_address.split(', מגדלי'):
+            if part.startswith(' ') or part.startswith('מגדלי'):
+                plaintiff_lines.append(('מגדלי' + part if not part.startswith('מגדלי') else part, False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
+            else:
+                plaintiff_lines.append((part, False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
+    contact_parts = []
+    if firm_phone:
+        contact_parts.append(f"טל': {firm_phone}")
+    if firm_fax:
+        contact_parts.append(f"פקס': {firm_fax}")
+    if contact_parts:
+        plaintiff_lines.append((' '.join(contact_parts), False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
+    if firm_email:
+        plaintiff_lines.append((firm_email, True, 11, WD_ALIGN_PARAGRAPH.RIGHT))
+
+    set_cell_multiline(header_tbl.rows[2].cells[1], plaintiff_lines)
+    # Label cell - pronoun at the bottom
+    label_lines = [('', False, 11, WD_ALIGN_PARAGRAPH.RIGHT)] * max(0, len(plaintiff_lines) - 1)
+    label_lines.append((pronoun, False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
+    set_cell_multiline(header_tbl.rows[2].cells[0], label_lines)
+    set_cell_rtl(header_tbl.rows[2].cells[2], '', size=11)
+
+    # ── Row 3: empty | "- נגד -" centered | empty ───────────────────────
+    set_cell_rtl(header_tbl.rows[3].cells[0], '', size=12)
+    set_cell_rtl(header_tbl.rows[3].cells[1], '- נגד -', bold=True, size=12,
                  alignment=WD_ALIGN_PARAGRAPH.CENTER)
+    set_cell_rtl(header_tbl.rows[3].cells[2], '', size=12)
 
-    # Row 3: Defendant name (right-aligned, bold)
-    set_cell_rtl(parties_table.rows[3].cells[0], defendant_name, bold=True, size=12,
-                 alignment=WD_ALIGN_PARAGRAPH.RIGHT)
-    set_cell_rtl(parties_table.rows[3].cells[1], '', size=12)
+    # ── Row 4: label (right) | Defendant details (center) | empty ────────
+    defendant_lines = []
+    defendant_lines.append((defendant_name, True, 12, WD_ALIGN_PARAGRAPH.RIGHT))
+    if defendant_id:
+        defendant_lines.append((f'ח.פ {defendant_id}', False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
+    if defendant_address:
+        defendant_lines.append((defendant_address, False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
 
-    # Row 4: Defendant label
-    defendant_label = "הנתבע" if data.get("defendant_type") == "individual" else "הנתבעת"
-    set_cell_rtl(parties_table.rows[4].cells[0], defendant_label, size=12,
-                 alignment=WD_ALIGN_PARAGRAPH.RIGHT)
-    set_cell_rtl(parties_table.rows[4].cells[1], '', size=12)
+    set_cell_multiline(header_tbl.rows[4].cells[1], defendant_lines)
+    def_label_lines = [('', False, 11, WD_ALIGN_PARAGRAPH.RIGHT)] * max(0, len(defendant_lines) - 1)
+    def_label_lines.append((defendant_label, False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
+    set_cell_multiline(header_tbl.rows[4].cells[0], def_label_lines)
+    set_cell_rtl(header_tbl.rows[4].cells[2], '', size=11)
+
+    # ── Row 5: empty | nature+amount values | nature+amount labels ───────
+    amount_str = f'{total:,.0f} ₪ קרן (לא כולל הצמדה וריבית, שכ"ט עו"ד והוצאות)'
+    set_cell_multiline(header_tbl.rows[5].cells[1], [
+        ('הצהרתית וכספית', False, 11, WD_ALIGN_PARAGRAPH.RIGHT),
+        (amount_str, True, 11, WD_ALIGN_PARAGRAPH.RIGHT),
+    ])
+    set_cell_multiline(header_tbl.rows[5].cells[2], [
+        ('מהות התביעה:', True, 11, WD_ALIGN_PARAGRAPH.LEFT),
+        ('סכום התביעה:', True, 11, WD_ALIGN_PARAGRAPH.LEFT),
+    ])
+    set_cell_rtl(header_tbl.rows[5].cells[0], '', size=11)
+
+    # Add borders to plaintiff/defendant rows (rows 2-4) for clean box look
+    for ri in range(2, 5):
+        for ci in range(3):
+            tc = header_tbl.rows[ri].cells[ci]._element
+            tcPr = tc.find(qn('w:tcPr'))
+            if tcPr is None:
+                tcPr = etree.SubElement(tc, qn('w:tcPr'))
+                tc.insert(0, tcPr)
+            tcB = etree.SubElement(tcPr, qn('w:tcBorders'))
+            # Top border on row 2, bottom on row 4
+            if ri == 2:
+                top = etree.SubElement(tcB, qn('w:top'))
+                top.set(qn('w:val'), 'single')
+                top.set(qn('w:sz'), '4')
+                top.set(qn('w:space'), '0')
+                top.set(qn('w:color'), 'auto')
+            if ri == 4:
+                bot = etree.SubElement(tcB, qn('w:bottom'))
+                bot.set(qn('w:val'), 'single')
+                bot.set(qn('w:sz'), '4')
+                bot.set(qn('w:space'), '0')
+                bot.set(qn('w:color'), 'auto')
+
+    # ── Header Summary Table (financial breakdown) ───────────────────────
+    add_plain_para('')
+    add_summary_table(claims, total)
 
     # ── Title ────────────────────────────────────────────────────────────
     add_title('כ ת ב    ת ב י ע ה')

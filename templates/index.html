@@ -420,6 +420,10 @@
                     <label>שנת לידה</label>
                     <input type="number" id="birth_year" placeholder="למשל: 1985">
                 </div>
+                <div class="form-group full-width">
+                    <label>כתובת מגורים</label>
+                    <input type="text" id="plaintiff_address" placeholder="למשל: הרצל 10, תל אביב">
+                </div>
             </div>
         </div>
 
@@ -449,6 +453,10 @@
                 <div class="form-group full-width">
                     <label>תיאור עסק/פעילות</label>
                     <input type="text" id="defendant_business" placeholder="למשל: ייבוא, שיווק ומכירה של מוצרי ריהוט">
+                </div>
+                <div class="form-group full-width">
+                    <label>כתובת הנתבע/ת</label>
+                    <input type="text" id="defendant_address" placeholder="למשל: הכישור 23, אשקלון">
                 </div>
             </div>
         </div>
@@ -744,15 +752,35 @@
             <div class="form-grid">
                 <div class="form-group">
                     <label>בית דין</label>
-                    <input type="text" id="court_header" value="בית הדין האזורי לעבודה">
+                    <input type="text" id="court_header" value="בית הדין האזורי לעבודה בתל אביב">
                 </div>
                 <div class="form-group">
                     <label>שם עורך/ת הדין</label>
-                    <input type="text" id="attorney_name" placeholder="למשל: דורון לוין">
+                    <input type="text" id="attorney_name" value="דורון לוין ו/או אוהד תלרז">
                 </div>
                 <div class="form-group">
                     <label>מספר רישיון (מ.ר.)</label>
                     <input type="text" id="attorney_id" placeholder="למשל: 87732">
+                </div>
+                <div class="form-group full-width">
+                    <label>שם המשרד</label>
+                    <input type="text" id="firm_name" value='לוין תלרז, משרד עורכי דין'>
+                </div>
+                <div class="form-group full-width">
+                    <label>כתובת המשרד</label>
+                    <input type="text" id="firm_address" value="מרח' הארבעה 28, תל אביב, מגדלי הארבעה - מגדל דרומי, קומה 19">
+                </div>
+                <div class="form-group">
+                    <label>טלפון</label>
+                    <input type="text" id="firm_phone" value="054-3699782">
+                </div>
+                <div class="form-group">
+                    <label>פקס</label>
+                    <input type="text" id="firm_fax" value="076-5102966">
+                </div>
+                <div class="form-group">
+                    <label>דוא"ל</label>
+                    <input type="text" id="firm_email" value="law@levin-telraz.co.il">
                 </div>
             </div>
         </div>
@@ -878,8 +906,8 @@
 
     function collectData() {
         const fields = [
-            'plaintiff_name', 'plaintiff_id', 'gender', 'birth_year',
-            'defendant_name', 'defendant_id', 'defendant_type', 'defendant_owner', 'defendant_business',
+            'plaintiff_name', 'plaintiff_id', 'gender', 'birth_year', 'plaintiff_address',
+            'defendant_name', 'defendant_id', 'defendant_type', 'defendant_owner', 'defendant_business', 'defendant_address',
             'start_date', 'end_date', 'job_title', 'termination_type',
             'work_days_per_week', 'hours_per_day',
             'base_salary', 'commissions', 'work_schedule',
@@ -896,6 +924,7 @@
             'recuperation_days_paid',
             'salary_delay_amount', 'emotional_amount', 'deduction_amount',
             'narrative', 'court_header', 'attorney_name', 'attorney_id',
+            'firm_name', 'firm_address', 'firm_phone', 'firm_fax', 'firm_email',
         ];
 
         const data = {};
