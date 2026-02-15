@@ -530,13 +530,59 @@ def generate_claim_text(data, calculations):
     start_fmt = start_dt.strftime("%d.%m.%Y")
     end_fmt = end_dt.strftime("%d.%m.%Y")
 
-    # Gender handling
+    # ── Gender-specific forms ────────────────────────────────────────────
     gender = data.get("gender", "male")
-    plaintiff_title = "מר" if gender == "male" else "הגב'"
-    pronoun = "התובע" if gender == "male" else "התובעת"
-    pronoun_he = "הוא" if gender == "male" else "היא"
-    worked = "עבד" if gender == "male" else "עבדה"
-    was_forced = "נאלץ" if gender == "male" else "נאלצה"
+    m = gender == "male"
+
+    # All gendered words used throughout the document
+    g = {
+        "title": "מר" if m else "הגב'",
+        "pronoun": "התובע" if m else "התובעת",
+        "he": "הוא" if m else "היא",
+        "him": "לו" if m else "לה",
+        "his": "שלו" if m else "שלה",
+        "worked": "עבד" if m else "עבדה",
+        "was_forced": "נאלץ" if m else "נאלצה",
+        "represented": "מיוצג" if m else "מיוצגת",
+        "submits": "מגיש" if m else "מגישה",
+        "worker": "עובד" if m else "עובדת",
+        "excellent": "מצוין" if m else "מצוינת",
+        "professional": "מקצועי" if m else "מקצועית",
+        "performed": "ביצע" if m else "ביצעה",
+        "began": "החל" if m else "החלה",
+        "hourly_worker": "שעתי" if m else "שעתית",
+        "employed": "הועסק" if m else "הועסקה",
+        "was": "היה" if m else "היתה",
+        "entitled": "זכאי" if m else "זכאית",
+        "will_claim": "יטען" if m else "תטען",
+        "will_ask": "יבקש" if m else "תבקש",
+        "his_salary": "שכרו" if m else "שכרה",
+        "his_hourly": "שכרו השעתי" if m else "שכרה השעתי",
+        "his_daily": "שכרו היומי" if m else "שכרה היומי",
+        "his_monthly": "שכרו החודשי" if m else "שכרה החודשי",
+        "his_work": "עבודתו" if m else "עבודתה",
+        "his_employment": "העסקתו" if m else "העסקתה",
+        "his_rights": "זכויותיו" if m else "זכויותיה",
+        "his_seniority": "לוותקו" if m else "לוותקה",
+        "fired": "פוטר" if m else "פוטרה",
+        "resigned": "התפטר" if m else "התפטרה",
+        "his_severance": "פיצויי פיטוריו" if m else "פיצויי פיטוריה",
+        "from_him": "ממנו" if m else "ממנה",
+        "obligate_him": "לחייבו" if m else "לחייבה",
+        "to_hand_him": "למסור לו" if m else "למסור לה",
+        "his_possession": "בידי" if m else "בידי",
+        "in_his_name": "על שם" if m else "על שם",
+        "in_ownership": "שבבעלותו" if m else "שבבעלותה",
+        "employer_of": "מעסיקו" if m else "מעסיקה",
+        "deducted_from": "משכרו" if m else "משכרה",
+        "his_monthly_salary": "משכורתו" if m else "משכורתה",
+        "delayed_pay": "שכרו" if m else "שכרה",
+        "resigned_as_fired": "להתפטר בדין מפוטר" if m else "להתפטר בדין מפוטרת",
+        "was_late": "מאחר" if m else "מאחרת",
+        "prevents": "מונע" if m else "מונעת",
+    }
+
+    pronoun = g["pronoun"]
 
     # Defendant label
     if defendant_type == "company":
@@ -544,15 +590,15 @@ def generate_claim_text(data, calculations):
         defendant_desc = f"הינה חברה בבעלותו ותחת ניהולו של {defendant_owner} העוסקת ב{defendant_business}"
     else:
         defendant_label = defendant_name
-        defendant_desc = f"העוסק/ת ב{defendant_business}"
+        defendant_desc = f"העוסק ב{defendant_business}" if m else f"העוסקת ב{defendant_business}"
 
     # Termination language
     if termination_type == "fired":
-        termination_text = f"עד שפוטר/ה ביום {end_fmt}"
+        termination_text = f"עד ש{g['fired']} ביום {end_fmt}"
     elif termination_type == "resigned_justified":
-        termination_text = f"עד שנאלץ/ה לסיים את העסקתו/ה בדין מפוטר/ת ביום {end_fmt}"
+        termination_text = f"עד ש{g['was_forced']} לסיים את {g['his_employment']} בדין {'מפוטר' if m else 'מפוטרת'} ביום {end_fmt}"
     else:
-        termination_text = f"עד שהתפטר/ה ביום {end_fmt}"
+        termination_text = f"עד ש{g['resigned']} ביום {end_fmt}"
 
     # ── Rewrite free-text fields via Claude API ──────────────────────────
     case_context = (
@@ -584,42 +630,41 @@ def generate_claim_text(data, calculations):
 
     # ── General ──
     sections.append("כללי")
-    sections.append(f"{pronoun} מיוצג/ת ע\"י ב\"כ, אשר מענה להמצאת כתבי בית דין הוא, כמצוין בכותרת.")
-    sections.append(f"{pronoun} מגיש/ה תביעה זו כנגד הנתבע/ת בגין הפרת זכויותיו/ה כעובד/ת וכאדם, הכול כפי שיפורט להלן.")
+    sections.append(f"{pronoun} {g['represented']} ע\"י ב\"כ, אשר מענה להמצאת כתבי בית דין הוא, כמצוין בכותרת.")
+    sections.append(f"{pronoun} {g['submits']} תביעה זו כנגד הנתבעת בגין הפרת {g['his_rights']} כ{g['worker']} וכאדם, הכול כפי שיפורט להלן.")
     sections.append("הטענות שלהלן הינן חלופיות, מצטברות או משלימות - הכול לפי העניין, הקשר הדברים והדבקם.")
     sections.append("")
 
     # ── Parties ──
     sections.append("הצדדים")
     sections.append(
-        f"{pronoun}, {plaintiff_title} {plaintiff_name}, ת.ז. {plaintiff_id}, "
-        f"{worked} בנתבע/ת החל מיום {start_fmt} {termination_text}, "
-        f"סה\"כ {worked} {pronoun} בנתבע/ת {dur['total_months']} חודשים "
+        f"{pronoun}, {g['title']} {plaintiff_name}, ת.ז. {plaintiff_id}, "
+        f"{g['worked']} בנתבעת החל מיום {start_fmt} {termination_text}, "
+        f"סה\"כ {g['worked']} {pronoun} בנתבעת {dur['total_months']} חודשים "
         f"שהם {dur['decimal_years']} שנים (להלן: \"{pronoun}\")."
     )
-    sections.append(f"תלושי שכר הנמצאים בידי {pronoun} מצ\"ב ומסומנים כנספח 1.")
+    sections.append(f"תלושי שכר הנמצאים {g['his_possession']} {pronoun} מצ\"ב ומסומנים כנספח 1.")
     sections.append(
-        f"הנתבע/ת, {defendant_label}, ח.פ./ע.מ. {defendant_id}, "
+        f"הנתבעת, {defendant_label}, ח.פ./ע.מ. {defendant_id}, "
         f"{defendant_desc} "
-        f"ומי שהיה/תה מעסיק/תו/ה של {pronoun} בתקופה הרלוונטית לכתב התביעה (להלן: \"הנתבע/ת\")."
+        f"ומי ש{g['was']} {g['employer_of']} של {pronoun} בתקופה הרלוונטית לכתב התביעה (להלן: \"הנתבעת\")."
     )
     sections.append("")
 
     # ── Background ──
     sections.append("רקע עובדתי")
     sections.append(
-        f"{pronoun} החל/ה את עבודתו/ה בנתבע/ת כ{job_title} החל מיום {start_fmt}."
+        f"{pronoun} {g['began']} את {g['his_work']} בנתבעת כ{job_title} החל מיום {start_fmt}."
     )
     if work_schedule:
         if _api_available and work_schedule != work_schedule_raw:
-            # Claude rewrote it — use as a standalone paragraph
             sections.append(work_schedule)
         else:
-            sections.append(f"עבודתו/ה של {pronoun} התנהלה {work_schedule}.")
+            sections.append(f"{g['his_work']} של {pronoun} התנהלה {work_schedule}.")
 
     sections.append(
-        f"לכל אורך תקופת העסקתו/ה, {pronoun} היה/תה עובד/ת מצוין/ת ומקצועי/ת "
-        f"אשר ביצע/ה את עבודתו/ה נאמנה."
+        f"לכל אורך תקופת {g['his_employment']}, {pronoun} {g['was']} {g['worker']} {g['excellent']} ו{g['professional']} "
+        f"אשר {g['performed']} את {g['his_work']} נאמנה."
     )
 
     if narrative:
@@ -633,16 +678,16 @@ def generate_claim_text(data, calculations):
     base = safe_float(data.get("base_salary"), 0)
     comm = safe_float(data.get("commissions"), 0)
 
-    salary_desc = f"שכרו/ה של {pronoun} עמד על סך של {base:,.0f} ₪ ברוטו"
+    salary_desc = f"{g['his_salary']} של {pronoun} עמד על סך של {base:,.0f} ₪ ברוטו"
     if comm > 0:
         salary_desc += f" בגין שכר בסיס ובנוסף {comm:,.0f} ₪ בגין עמלות/תוספות חודשיות"
     salary_desc += "."
 
     sections.append(salary_desc)
     sections.append(
-        f"סה\"כ שכרו/ה החודשי הקובע של {pronoun} עמד על {det_salary:,.0f} ₪ ברוטו, "
-        f"כך ששכרו/ה השעתי הקובע עמד על סך של {hourly:,.1f} ₪ "
-        f"ושכרו/ה היומי הקובע עמד על סך של {daily:,.0f} ₪."
+        f"סה\"כ {g['his_monthly']} הקובע של {pronoun} עמד על {det_salary:,.0f} ₪ ברוטו, "
+        f"כך ש{g['his_hourly']} הקובע עמד על סך של {hourly:,.1f} ₪ "
+        f"ו{g['his_daily']} הקובע עמד על סך של {daily:,.0f} ₪."
     )
     sections.append("")
 
@@ -657,12 +702,12 @@ def generate_claim_text(data, calculations):
     # Unpaid salary
     if "unpaid_salary" in claims:
         c = claims["unpaid_salary"]
-        sections.append(f"שכר עבודה שלא שולם")
+        sections.append("שכר עבודה שלא שולם")
         sections.append(
-            f"כאמור, {pronoun} יטען/תטען כי הנתבע/ת לא שילם/ה לו/ה את שכרו/ה כנדרש על פי דין."
+            f"כאמור, {pronoun} {g['will_claim']} כי הנתבעת לא שילמה {g['him']} את {g['his_salary']} כנדרש על פי דין."
         )
         sections.append(
-            f"לפיכך, {pronoun} יבקש/תבקש מבית הדין הנכבד לחייב את הנתבע/ת לשלם ל{pronoun} "
+            f"לפיכך, {pronoun} {g['will_ask']} מבית הדין הנכבד לחייב את הנתבעת לשלם ל{pronoun} "
             f"שכר עבודה שלא שולם בסך של {c['amount']:,.0f} ₪ "
             f"בצירוף פיצוי הלנת שכר או הפרשי הצמדה וריבית לפי העניין עד מועד התשלום בפועל."
         )
@@ -675,12 +720,11 @@ def generate_claim_text(data, calculations):
         sections.append("הפרשי שכר – שעות נוספות")
 
         if d.get("mode") == "global":
-            # Global OT mode - detailed calculation with paid-vs-owed comparison
             sections.append(
-                f"כאמור, {pronoun} יטען/תטען כי הנתבע/ת לא שילם/ה לו/ה כנדרש בגין השעות הנוספות הרבות אותן {worked}."
+                f"כאמור, {pronoun} {g['will_claim']} כי הנתבעת לא שילמה {g['him']} כנדרש בגין השעות הנוספות הרבות אותן {g['worked']}."
             )
             sections.append(
-                f"שכרו/ה השעתי הבסיסי של {pronoun} הינו {d['hourly_wage']:.2f} ₪. "
+                f"{g['his_hourly']} הבסיסי של {pronoun} הינו {d['hourly_wage']:.2f} ₪. "
                 f"יום עבודה סטנדרטי: {d['standard_daily_hours']:.1f} שעות. "
                 f"שעות עבודה בפועל ביום (ממוצע): {d['actual_daily_hours']:.1f} שעות."
             )
@@ -689,16 +733,12 @@ def generate_claim_text(data, calculations):
                 f"2 השעות הנוספות הראשונות מזכות בתוספת 25% (תעריף {d['rate_125']:.2f} ₪) "
                 f"ומעבר לכך בתוספת 50% (תעריף {d['rate_150']:.2f} ₪)."
             )
-            sections.append(
-                f"תחשיב שעות נוספות שהיה צריך לשלם בכל חודש:"
-            )
+            sections.append("תחשיב שעות נוספות שהיה צריך לשלם בכל חודש:")
             sections.append(
                 f"שעות נוספות ביום: {d['daily_ot']:.1f} שעות "
                 f"({d['daily_ot_125']:.1f} שעות × 125% + {d['daily_ot_150']:.1f} שעות × 150%)"
             )
-            sections.append(
-                f"ימי עבודה בחודש: {d['work_days_per_month']:.1f} ימים"
-            )
+            sections.append(f"ימי עבודה בחודש: {d['work_days_per_month']:.1f} ימים")
             sections.append(
                 f"סכום שהיה צריך לשלם בחודש: "
                 f"{d['monthly_ot_125_hours']:.1f} שעות × {d['rate_125']:.2f} ₪ + "
@@ -719,19 +759,18 @@ def generate_claim_text(data, calculations):
                 f"{c['amount']:,.0f} ₪"
             )
         else:
-            # Basic mode - simple weekly OT
             sections.append(
-                f"כאמור, {pronoun} יטען/תטען כי הנתבע/ת כלל לא שילם/ה לו/ה בגין השעות הנוספות הרבות אותן {worked}."
+                f"כאמור, {pronoun} {g['will_claim']} כי הנתבעת כלל לא שילמה {g['him']} בגין השעות הנוספות הרבות אותן {g['worked']}."
             )
             sections.append(
-                f"שכרו/ה השעתי של {pronoun} הינו {hourly:.2f} ₪ ומשכך "
+                f"{g['his_hourly']} של {pronoun} הינו {hourly:.2f} ₪ ומשכך "
                 f"תעריף תוספת 25% הינו {d['surcharge_125']:.1f} ₪ "
                 f"ותעריף 50% הינו {d['surcharge_150']:.1f} ₪."
             )
 
         sections.append(
-            f"לאור האמור לעיל, בהתאם לתחשיבים, {pronoun} יבקש/תבקש כי בית הדין הנכבד "
-            f"יחייב את הנתבע/ת לשלם ל{pronoun} הפרשי שכר שעות נוספות בסך של {c['amount']:,.0f} ₪ "
+            f"לאור האמור לעיל, בהתאם לתחשיבים, {pronoun} {g['will_ask']} כי בית הדין הנכבד "
+            f"יחייב את הנתבעת לשלם ל{pronoun} הפרשי שכר שעות נוספות בסך של {c['amount']:,.0f} ₪ "
             f"בצירוף פיצוי הלנת שכר או הפרשי הצמדה וריבית לפי העניין עד מועד התשלום בפועל."
         )
         sections.append("")
@@ -742,15 +781,15 @@ def generate_claim_text(data, calculations):
         sections.append("הפרשי הפרשות לפנסיה")
         sections.append(
             f"בהתאם להוראות צו ההרחבה לפנסיה חובה ולצו ההרחבה בדבר הגדלת ההפרשות לביטוח פנסיוני במשק, "
-            f"היה על הנתבע/ת להפריש ל{pronoun} בגין רכיב תגמולי המעסיק {PENSION_EMPLOYER_RATE*100}% משכרו/ה המלא בכל חודש."
+            f"היה על הנתבעת להפריש ל{pronoun} בגין רכיב תגמולי המעסיק {PENSION_EMPLOYER_RATE*100}% {g['deducted_from']} המלא בכל חודש."
         )
         sections.append(
-            f"בהתאם לתחשיבי {pronoun} על הנתבע/ת לשלם ל{pronoun} הפרשי הפרשות לפנסיה "
+            f"בהתאם לתחשיבי {pronoun} על הנתבעת לשלם ל{pronoun} הפרשי הפרשות לפנסיה "
             f"בסך {c['amount']:,.0f} ₪."
         )
         sections.append(
-            f"לאור האמור לעיל, בהתאם לתחשיבים, {pronoun} יבקש/תבקש כי בית הדין הנכבד "
-            f"יחייב את הנתבע/ת לשלם ל{pronoun} הפרשי הפרשות לפנסיה בסך של {c['amount']:,.0f} ₪ "
+            f"לאור האמור לעיל, בהתאם לתחשיבים, {pronoun} {g['will_ask']} כי בית הדין הנכבד "
+            f"יחייב את הנתבעת לשלם ל{pronoun} הפרשי הפרשות לפנסיה בסך של {c['amount']:,.0f} ₪ "
             f"בצירוף פיצוי הלנת שכר או הפרשי הצמדה וריבית לפי העניין עד מועד התשלום בפועל."
         )
         sections.append("")
@@ -761,22 +800,22 @@ def generate_claim_text(data, calculations):
         sections.append("פיצויי פיטורים")
         if data.get("termination_type") == "resigned_justified":
             sections.append(
-                f"{pronoun} יטען/תטען, כי לאור ההפרות החמורות והמתמשכות של הנתבע/ת "
-                f"והפגיעה בזכויותיו/ה הקוגנטיות נאלץ/ה, בלית ברירה, להודיע על סיום העסקתו/ה."
+                f"{pronoun} {g['will_claim']}, כי לאור ההפרות החמורות והמתמשכות של הנתבעת "
+                f"והפגיעה ב{g['his_rights']} הקוגנטיות {g['was_forced']}, בלית ברירה, להודיע על סיום {g['his_employment']}."
             )
             sections.append(
                 f"משכך, ובהתאם להוראות חוק פיצויי פיטורים, תשכ\"ג-1963 ולפסיקת בתי הדין לעבודה "
-                f"{pronoun} הינו/ה זכאי/ת להתפטר בדין מפוטר/ת ולמלוא פיצויי פיטוריו/ה."
+                f"{pronoun} {g['entitled']} {g['resigned_as_fired']} ולמלוא {g['his_severance']}."
             )
         sections.append(
             f"{det_salary:,.0f} ₪ (שכר חודשי קובע) * {dur['decimal_years']} (תקופת העסקה) = {c['full_amount']:,.1f} ₪"
         )
         if c["deposited"] > 0:
-            sections.append(f"בניכוי צבירת הפיצויים על שם {pronoun} בקופה בסך {c['deposited']:,.0f} ₪")
-            sections.append(f"סה\"כ {pronoun} זכאי/ת להשלמת פיצויי פיטורים בסך {c['amount']:,.0f} ₪")
+            sections.append(f"בניכוי צבירת הפיצויים {g['in_his_name']} {pronoun} בקופה בסך {c['deposited']:,.0f} ₪")
+            sections.append(f"סה\"כ {pronoun} {g['entitled']} להשלמת פיצויי פיטורים בסך {c['amount']:,.0f} ₪")
         sections.append(
-            f"לאור האמור לעיל, {pronoun} יבקש/תבקש כי בית הדין הנכבד "
-            f"יחייב את הנתבע/ת לשלם ל{pronoun} פיצויי פיטורים בסך של {c['amount']:,.0f} ₪ "
+            f"לאור האמור לעיל, {pronoun} {g['will_ask']} כי בית הדין הנכבד "
+            f"יחייב את הנתבעת לשלם ל{pronoun} פיצויי פיטורים בסך של {c['amount']:,.0f} ₪ "
             f"בצירוף פיצוי הלנת שכר או הפרשי הצמדה וריבית לפי העניין עד מועד התשלום בפועל."
         )
         sections.append("")
@@ -787,12 +826,12 @@ def generate_claim_text(data, calculations):
         sections.append("הפרשי שכר דמי חופשה ופדיון חופשה")
         sections.append(
             f"בהתאם להוראות חוק חופשה שנתית, תשי\"א-1951 "
-            f"{pronoun} היה/תה זכאי/ת לצבירת ימי חופשה "
-            f"ובהתאם לוותקו/ה סה\"כ {c['entitled_days']} ימי חופשה לכל אורך התקופה."
+            f"{pronoun} {g['was']} {g['entitled']} לצבירת ימי חופשה "
+            f"ובהתאם {g['his_seniority']} סה\"כ {c['entitled_days']} ימי חופשה לכל אורך התקופה."
         )
         sections.append(
-            f"לאור האמור לעיל {pronoun} יבקש/תבקש כי בית הדין הנכבד "
-            f"יחייב את הנתבע/ת לשלם ל{pronoun} הפרשי שכר דמי חופשה ופדיון חופשה "
+            f"לאור האמור לעיל {pronoun} {g['will_ask']} כי בית הדין הנכבד "
+            f"יחייב את הנתבעת לשלם ל{pronoun} הפרשי שכר דמי חופשה ופדיון חופשה "
             f"בסך של {c['amount']:,.0f} ₪ "
             f"בצירוף פיצוי הלנת שכר או הפרשי הצמדה וריבית לפי העניין עד מועד התשלום בפועל."
         )
@@ -803,13 +842,13 @@ def generate_claim_text(data, calculations):
         c = claims["holidays"]
         sections.append("דמי חגים והפרשי דמי חג")
         sections.append(
-            f"בהתאם להוראות צו ההרחבה הסכם מסגרת 2000 ולאור העובדה כי {pronoun} הועסק/ה "
-            f"כעובד/ת שעתי/ת, לאחר 3 חודשי עבודה בנתבע/ת, {pronoun} היה/תה זכאי/ת לתשלום "
+            f"בהתאם להוראות צו ההרחבה הסכם מסגרת 2000 ולאור העובדה כי {pronoun} {g['employed']} "
+            f"כ{g['worker']} {g['hourly_worker']}, לאחר 3 חודשי עבודה בנתבעת, {pronoun} {g['was']} {g['entitled']} לתשלום "
             f"בגין {HOLIDAY_DAYS_PER_YEAR} ימי חג בכל שנת עבודה."
         )
         sections.append(
-            f"לאור האמור לעיל {pronoun} יבקש/תבקש כי בית הדין הנכבד "
-            f"יחייב את הנתבע/ת לשלם ל{pronoun} דמי חגים והפרשי דמי חג "
+            f"לאור האמור לעיל {pronoun} {g['will_ask']} כי בית הדין הנכבד "
+            f"יחייב את הנתבעת לשלם ל{pronoun} דמי חגים והפרשי דמי חג "
             f"בסך של {c['amount']:,.0f} ₪ "
             f"בצירוף פיצוי הלנת שכר או הפרשי הצמדה וריבית לפי העניין עד מועד התשלום בפועל."
         )
@@ -821,11 +860,11 @@ def generate_claim_text(data, calculations):
         sections.append("דמי הבראה")
         sections.append(
             f"בהתאם להוראות צו ההרחבה בדבר השתתפות המעסיק בהוצאות הבראה ונופש, "
-            f"במהלך תקופת העסקתו/ה {pronoun} היה/תה זכאי/ת ל-{c['entitled_days']} ימי הבראה."
+            f"במהלך תקופת {g['his_employment']} {pronoun} {g['was']} {g['entitled']} ל-{c['entitled_days']} ימי הבראה."
         )
         sections.append(
-            f"לאור האמור לעיל {pronoun} יבקש/תבקש כי בית הדין הנכבד "
-            f"יחייב את הנתבע/ת לשלם ל{pronoun} דמי הבראה "
+            f"לאור האמור לעיל {pronoun} {g['will_ask']} כי בית הדין הנכבד "
+            f"יחייב את הנתבעת לשלם ל{pronoun} דמי הבראה "
             f"בסך של {c['amount']:,.0f} ₪ "
             f"בצירוף פיצוי הלנת שכר או הפרשי הצמדה וריבית לפי העניין עד מועד התשלום בפועל."
         )
@@ -836,10 +875,10 @@ def generate_claim_text(data, calculations):
         c = claims["deductions"]
         sections.append("ניכויים שלא כדין – תגמולי עובד")
         sections.append(
-            f"{pronoun} יטען/תטען כי הנתבע/ת ניכה/תה משכרו/ה סכומים שלא כדין ובחוסר תום לב."
+            f"{pronoun} {g['will_claim']} כי הנתבעת ניכתה {g['deducted_from']} סכומים שלא כדין ובחוסר תום לב."
         )
         sections.append(
-            f"לאור האמור לעיל, {pronoun} יבקש/תבקש מבית הדין הנכבד לחייב את הנתבע/ת "
+            f"לאור האמור לעיל, {pronoun} {g['will_ask']} מבית הדין הנכבד לחייב את הנתבעת "
             f"לשלם ל{pronoun} בגין ניכויים שלא כדין סך של {c['amount']:,.0f} ₪ "
             f"בצירוף פיצוי הלנת שכר או הפרשי הצמדה וריבית לפי העניין עד מועד התשלום בפועל."
         )
@@ -850,12 +889,12 @@ def generate_claim_text(data, calculations):
         c = claims["salary_delay"]
         sections.append("פיצויי הלנת שכר")
         sections.append(
-            f"במרבית תקופת העסקתו/ה הנתבע/ת היה/תה מאחר/ת באופן שיטתי ועקבי "
-            f"בתשלום משכורתו/ה החודשית תוך הלנת שכרו/ה שלא כדין."
+            f"במרבית תקופת {g['his_employment']} הנתבעת {g['was']} {g['was_late']} באופן שיטתי ועקבי "
+            f"בתשלום {g['his_monthly_salary']} החודשית תוך הלנת {g['delayed_pay']} שלא כדין."
         )
         sections.append(
             f"לאור האמור לעיל ובהתאם להוראות חוק הגנת השכר, תשי\"ח-1958 "
-            f"הרי ש{pronoun} זכאי/ת לפיצוי בגין הלנת שכרו/ה בסך של {c['amount']:,.0f} ₪."
+            f"הרי ש{pronoun} {g['entitled']} לפיצוי בגין הלנת {g['delayed_pay']} בסך של {c['amount']:,.0f} ₪."
         )
         sections.append("")
 
@@ -864,7 +903,7 @@ def generate_claim_text(data, calculations):
         c = claims["emotional"]
         sections.append("פיצוי בגין עוגמת נפש")
         sections.append(
-            f"לפיכך, {pronoun} יבקש/תבקש כי בית הדין הנכבד יורה לנתבע/ת לשלם ל{pronoun} "
+            f"לפיכך, {pronoun} {g['will_ask']} כי בית הדין הנכבד יורה לנתבעת לשלם ל{pronoun} "
             f"פיצוי בגין עוגמת נפש בסך של {c['amount']:,.0f} ₪ "
             f"בצירוף הפרשי הצמדה וריבית ממועד קום העילה ועד לתשלום בפועל."
         )
@@ -874,13 +913,13 @@ def generate_claim_text(data, calculations):
     if data.get("claim_documents"):
         sections.append("מסירת מסמכי גמר חשבון")
         sections.append(
-            f"{pronoun} יטען/תטען כי חרף העובדה שיחסי העבודה נותקו כבר ביום {end_fmt} "
-            f"הנתבע/ת לא מסר/ה ל{pronoun} טופס 161 ומסמכי שחרור והעברת בעלות על הקופה שבבעלותו/ה "
-            f"ובכך הלכה למעשה מונע/ת ממנו/ה את הגישה לכספי הפנסיה המגיעים לו/ה על פי דין."
+            f"{pronoun} {g['will_claim']} כי חרף העובדה שיחסי העבודה נותקו כבר ביום {end_fmt} "
+            f"הנתבעת לא מסרה ל{pronoun} טופס 161 ומסמכי שחרור והעברת בעלות על הקופה {g['in_ownership']} "
+            f"ובכך הלכה למעשה {g['prevents']} {g['from_him']} את הגישה לכספי הפנסיה המגיעים {g['him']} על פי דין."
         )
         sections.append(
-            f"לאור האמור לעיל {pronoun} יבקש/תבקש כי בית הדין הנכבד יחייב את הנתבע/ת "
-            f"למסור לו/ה את מסמכי גמר החשבון ובהם טופס 161 ערוך על פי דין ומסמכי העברת בעלות."
+            f"לאור האמור לעיל {pronoun} {g['will_ask']} כי בית הדין הנכבד יחייב את הנתבעת "
+            f"{g['to_hand_him']} את מסמכי גמר החשבון ובהם טופס 161 ערוך על פי דין ומסמכי העברת בעלות."
         )
         sections.append("")
 
@@ -897,16 +936,16 @@ def generate_claim_text(data, calculations):
     sections.append("")
 
     sections.append(
-        f"לאור ההפרות החמורות של זכויותיו/ה של {pronoun} המתוארות בהרחבה בכתב תביעה זה, "
-        f"מתבקש בית הדין הנכבד להזמין את הנתבע/ת לדין, ולחייבו/ה במלוא סכום התביעה "
+        f"לאור ההפרות החמורות של {g['his_rights']} של {pronoun} המתוארות בהרחבה בכתב תביעה זה, "
+        f"מתבקש בית הדין הנכבד להזמין את הנתבעת לדין, ו{g['obligate_him']} במלוא סכום התביעה "
         f"בצירוף הפרשי הצמדה וריבית לפי העניין מקום העילה ועד מועד התשלום בפועל "
         f"כמו גם בסעדים ההצהרתיים המבוקשים."
     )
     sections.append(
-        f"בנוסף, מתבקש בית הדין הנכבד לחייב את הנתבע/ת בתשלום הוצאות, שכ\"ט עו\"ד ומע\"מ בגינו."
+        f"בנוסף, מתבקש בית הדין הנכבד לחייב את הנתבעת בתשלום הוצאות, שכ\"ט עו\"ד ומע\"מ בגינו."
     )
     sections.append(
-        "בית הדין הנכבד מוסמך לדון בתביעה זו לאור מהותה, סכומה, מקום ביצוע העבודה ומענה של הנתבע/ת."
+        "בית הדין הנכבד מוסמך לדון בתביעה זו לאור מהותה, סכומה, מקום ביצוע העבודה ומענה של הנתבעת."
     )
 
     return "\n".join(sections)
@@ -1388,21 +1427,28 @@ def generate_docx(data, calculations, claim_text):
     # BUILD THE DOCUMENT — Cover Page (Enbar Shachar format)
     # ══════════════════════════════════════════════════════════════════════
 
+    # Helper: set vertical alignment on a cell
+    def _set_cell_valign(cell, val='bottom'):
+        tc = cell._element
+        tcPr = tc.find(qn('w:tcPr'))
+        if tcPr is None:
+            tcPr = etree.SubElement(tc, qn('w:tcPr'))
+            tc.insert(0, tcPr)
+        va = etree.SubElement(tcPr, qn('w:vAlign'))
+        va.set(qn('w:val'), val)
+
     # ── Table 1: Top Header (INVISIBLE borders, NO bidiVisual) ─────────
-    # Without bidiVisual: cell[0]=LEFT, cell[1]=RIGHT (standard LTR layout)
-    # We want: court name on LEFT, סע"ש/בפני on RIGHT
+    # Without bidiVisual: cell[0]=LEFT, cell[1]=RIGHT
+    # LEFT = court name (2 lines), RIGHT = סע"ש / בפני
     hdr_tbl = doc.add_table(rows=1, cols=2)
     hdr_el = hdr_tbl._element
     hdr_tblPr = hdr_el.find(qn('w:tblPr'))
     if hdr_tblPr is None:
         hdr_tblPr = etree.SubElement(hdr_el, qn('w:tblPr'))
 
-    # NO bidiVisual — so cell[0] = left side, cell[1] = right side
     hdr_tblW = etree.SubElement(hdr_tblPr, qn('w:tblW'))
     hdr_tblW.set(qn('w:type'), 'dxa')
     hdr_tblW.set(qn('w:w'), '9026')
-
-    # Invisible borders
     _make_table_borderless(hdr_tbl)
 
     hdr_grid = hdr_el.find(qn('w:tblGrid'))
@@ -1415,9 +1461,22 @@ def generate_docx(data, calculations, claim_text):
         gc = etree.SubElement(hdr_grid, qn('w:gridCol'))
         gc.set(qn('w:w'), w)
 
-    # cell[0] = LEFT side: court name
-    set_cell_rtl(hdr_tbl.rows[0].cells[0], court_name, bold=True, size=12,
-                 alignment=WD_ALIGN_PARAGRAPH.LEFT)
+    # Parse court name: split "בית הדין האזורי לעבודה בתל אביב" into 2 lines
+    court_base = court_name
+    court_location = ""
+    if " ב" in court_name:
+        # Split at last " ב" which starts the location (e.g. "בתל אביב")
+        parts = court_name.rsplit(" ב", 1)
+        if len(parts) == 2:
+            court_base = parts[0]
+            court_location = "ב" + parts[1]
+
+    # cell[0] = LEFT side: court name on 2 lines
+    court_lines = [(court_base, True, 12, WD_ALIGN_PARAGRAPH.LEFT)]
+    if court_location:
+        court_lines.append((court_location, True, 12, WD_ALIGN_PARAGRAPH.LEFT))
+    set_cell_multiline(hdr_tbl.rows[0].cells[0], court_lines)
+
     # cell[1] = RIGHT side: סע"ש and בפני
     set_cell_multiline(hdr_tbl.rows[0].cells[1], [
         ('סע"ש ________', False, 11, WD_ALIGN_PARAGRAPH.RIGHT),
@@ -1425,8 +1484,8 @@ def generate_docx(data, calculations, claim_text):
     ])
 
     # ── Table 2: Parties Section (VISIBLE borders) ───────────────────────
-    # Rows: בעניין label, plaintiff, נגד, defendant, מהות/סכום
-    # 2 columns: col0=content (wide), col1=label (narrow)
+    # Rows: בעניין, plaintiff, נגד, defendant, מהות/סכום
+    # 2 columns (bidiVisual): col0=content (wide RIGHT), col1=label (narrow LEFT)
     parties_tbl = doc.add_table(rows=5, cols=2)
     pt_el = parties_tbl._element
     pt_tblPr = pt_el.find(qn('w:tblPr'))
@@ -1438,7 +1497,6 @@ def generate_docx(data, calculations, claim_text):
     pt_tblW.set(qn('w:type'), 'dxa')
     pt_tblW.set(qn('w:w'), '9026')
 
-    # Visible borders on all sides
     pt_borders = etree.SubElement(pt_tblPr, qn('w:tblBorders'))
     for bn in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
         b = etree.SubElement(pt_borders, qn(f'w:{bn}'))
@@ -1457,7 +1515,7 @@ def generate_docx(data, calculations, claim_text):
         gc = etree.SubElement(pt_grid, qn('w:gridCol'))
         gc.set(qn('w:w'), w)
 
-    # Row 0: "בעניין:" label (right-aligned, bold) — merged across both cols
+    # Row 0: "בעניין:"
     set_cell_rtl(parties_tbl.rows[0].cells[0], 'בעניין:', bold=True, size=12,
                  alignment=WD_ALIGN_PARAGRAPH.RIGHT)
     set_cell_rtl(parties_tbl.rows[0].cells[1], '', size=11)
@@ -1471,32 +1529,30 @@ def generate_docx(data, calculations, claim_text):
     if attorney_name:
         plaintiff_lines.append((f'באמצעות ב"כ עוה"ד {attorney_name}', False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
     if firm_name:
-        plaintiff_lines.append((firm_name, False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
+        plaintiff_lines.append((f'ממשרד {firm_name}' if not firm_name.startswith('ממשרד') else firm_name, False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
     if firm_address:
-        plaintiff_lines.append((firm_address, False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
+        # Split address into street line and building/floor line
+        addr_parts = firm_address.split(',')
+        for part in addr_parts:
+            part = part.strip()
+            if part:
+                plaintiff_lines.append((part, False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
     contact_parts = []
     if firm_phone:
         contact_parts.append(f"טל': {firm_phone}")
     if firm_fax:
-        contact_parts.append(f"פקס': {firm_fax}")
+        contact_parts.append(f"פקסי': {firm_fax}")
     if contact_parts:
         plaintiff_lines.append((' '.join(contact_parts), False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
     if firm_email:
         plaintiff_lines.append((firm_email, False, 11, WD_ALIGN_PARAGRAPH.RIGHT))
 
     set_cell_multiline(parties_tbl.rows[1].cells[0], plaintiff_lines)
-    # Label: bold "התובע/ת" right-aligned, vertically aligned to BOTTOM
     set_cell_rtl(parties_tbl.rows[1].cells[1], pronoun, bold=True, size=12,
                  alignment=WD_ALIGN_PARAGRAPH.RIGHT)
-    # Set vertical alignment to bottom
-    tc1_pr = parties_tbl.rows[1].cells[1]._element.find(qn('w:tcPr'))
-    if tc1_pr is None:
-        tc1_pr = etree.SubElement(parties_tbl.rows[1].cells[1]._element, qn('w:tcPr'))
-        parties_tbl.rows[1].cells[1]._element.insert(0, tc1_pr)
-    vAlign1 = etree.SubElement(tc1_pr, qn('w:vAlign'))
-    vAlign1.set(qn('w:val'), 'bottom')
+    _set_cell_valign(parties_tbl.rows[1].cells[1], 'bottom')
 
-    # Row 2: "- נגד -" centered across both cols
+    # Row 2: "- נגד -" centered
     set_cell_rtl(parties_tbl.rows[2].cells[0], '- נגד -', bold=True, size=12,
                  alignment=WD_ALIGN_PARAGRAPH.CENTER)
     set_cell_rtl(parties_tbl.rows[2].cells[1], '', size=11)
@@ -1512,15 +1568,9 @@ def generate_docx(data, calculations, claim_text):
     set_cell_multiline(parties_tbl.rows[3].cells[0], defendant_lines)
     set_cell_rtl(parties_tbl.rows[3].cells[1], defendant_label, bold=True, size=12,
                  alignment=WD_ALIGN_PARAGRAPH.RIGHT)
-    # Set vertical alignment to bottom
-    tc3_pr = parties_tbl.rows[3].cells[1]._element.find(qn('w:tcPr'))
-    if tc3_pr is None:
-        tc3_pr = etree.SubElement(parties_tbl.rows[3].cells[1]._element, qn('w:tcPr'))
-        parties_tbl.rows[3].cells[1]._element.insert(0, tc3_pr)
-    vAlign3 = etree.SubElement(tc3_pr, qn('w:vAlign'))
-    vAlign3.set(qn('w:val'), 'bottom')
+    _set_cell_valign(parties_tbl.rows[3].cells[1], 'bottom')
 
-    # Row 4: מהות התביעה / סכום התביעה in a single row
+    # Row 4: מהות/סכום inside the bordered parties table
     amount_str = f'{total:,.0f} ₪'
     set_cell_multiline(parties_tbl.rows[4].cells[0], [
         (f'מהות התביעה: הצהרתית וכספית', True, 11, WD_ALIGN_PARAGRAPH.RIGHT),
