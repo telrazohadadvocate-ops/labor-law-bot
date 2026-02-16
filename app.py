@@ -1927,7 +1927,26 @@ def generate_docx(data, calculations, claim_text):
 def require_login():
     allowed = ("login", "static", "service_worker", "manifest")
     if request.endpoint not in allowed and not session.get("authenticated"):
+        # Return JSON error for AJAX/API requests instead of HTML redirect
+        if request.is_json or request.headers.get("Accept", "").startswith("application/json"):
+            return jsonify({"success": False, "error": "Session expired — please refresh and log in again"}), 401
         return redirect(url_for("login"))
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    """Return JSON for API errors instead of HTML error page."""
+    if request.is_json or request.headers.get("Accept", "").startswith("application/json"):
+        return jsonify({"success": False, "error": f"Internal server error: {e}"}), 500
+    return f"<h1>500 Internal Server Error</h1><p>{e}</p>", 500
+
+
+@app.errorhandler(404)
+def not_found(e):
+    """Return JSON for API 404s instead of HTML."""
+    if request.is_json or request.headers.get("Accept", "").startswith("application/json"):
+        return jsonify({"success": False, "error": "Route not found"}), 404
+    return redirect(url_for("login"))
 
 
 @app.route("/sw.js")

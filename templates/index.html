@@ -1012,6 +1012,11 @@
                 body: JSON.stringify(data),
             });
 
+            const contentType = resp.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                throw new Error('השרת החזיר תגובה לא תקינה. ייתכן שפג תוקף ההתחברות — נסו לרענן את הדף.');
+            }
+
             const result = await resp.json();
 
             if (!result.success) {
@@ -1100,6 +1105,11 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
             });
+
+            const contentType = resp.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                throw new Error('השרת החזיר תגובה לא תקינה. ייתכן שפג תוקף ההתחברות — נסו לרענן את הדף.');
+            }
 
             const result = await resp.json();
 
