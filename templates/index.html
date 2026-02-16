@@ -808,9 +808,22 @@
             </div>
         </div>
 
+        <div class="card" style="border: 2px solid var(--accent); background: #fffdf5;">
+            <h2 style="color: var(--primary);">יצירת כתב תביעה באמצעות AI</h2>
+            <p style="color: var(--text-muted); margin-bottom: 1rem;">
+                הזינו את העובדות הגולמיות של התיק – Claude AI ינתח את המידע וייצר כתב תביעה מלא ומובנה כולל סעיפים, נספחים, תחשיבים ואזכורי חקיקה.
+            </p>
+            <div class="form-group">
+                <label>עובדות גולמיות ותיאור נסיבות התיק</label>
+                <textarea id="raw_facts_input" rows="10" style="width:100%; font-size: 0.95rem; padding: 0.8rem; border: 1px solid var(--border); border-radius: 8px; direction: rtl;"
+                    placeholder="הזינו כאן את כל העובדות הרלוונטיות: נסיבות ההעסקה, תנאי עבודה, התנהלות המעסיק, נסיבות הפיטורים/ההתפטרות, הפרות זכויות, אירועים מרכזיים וכו'. ככל שתספקו יותר פרטים, כתב התביעה יהיה מקיף ומדויק יותר."></textarea>
+            </div>
+        </div>
+
         <div class="btn-row">
             <button class="btn btn-outline" onclick="goToStep(3)">חזרה</button>
-            <button class="btn btn-success" onclick="generateClaim()">חשב וצור כתב תביעה</button>
+            <button class="btn btn-success" onclick="generateClaim()">חשב וצור כתב תביעה (תבנית)</button>
+            <button class="btn btn-primary" onclick="generateClaimAI()" style="background: linear-gradient(135deg, var(--accent), #d4af37); border: none; color: var(--primary); font-weight: bold;">יצירה באמצעות AI</button>
         </div>
     </div>
 
@@ -819,7 +832,7 @@
 
         <div class="loading" id="loading">
             <div class="spinner"></div>
-            <p>מחשב ומייצר את כתב התביעה...</p>
+            <p id="loading-text">מחשב ומייצר את כתב התביעה...</p>
         </div>
 
         <div id="results" style="display:none">
@@ -846,7 +859,10 @@
             </div>
 
             <div class="card">
-                <h2>כתב התביעה</h2>
+                <div style="display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.5rem;">
+                    <h2 style="margin: 0;">כתב התביעה</h2>
+                    <span id="generation-mode-badge" style="display:none; padding: 0.2rem 0.7rem; border-radius: 12px; font-size: 0.8rem; font-weight: bold;"></span>
+                </div>
                 <div class="claim-preview" id="claim-text-preview"></div>
             </div>
 
@@ -864,6 +880,7 @@
     let currentStep = 1;
     let lastData = null;
     let lastResult = null;
+    let lastAiResponse = null;
 
     function toggleGlobalOT() {
         const section = document.getElementById('global_ot_section');
@@ -1031,6 +1048,11 @@
             // Display claim text
             document.getElementById('claim-text-preview').textContent = result.claim_text;
 
+            // Show mode badge (template mode)
+            showModeBadge('template');
+
+            lastAiResponse = null;
+
             document.getElementById('loading').classList.remove('active');
             document.getElementById('results').style.display = 'block';
 
@@ -1041,14 +1063,128 @@
         }
     }
 
+    async function generateClaimAI() {
+        const data = collectData();
+        const rawFacts = document.getElementById('raw_facts_input').value;
+
+        // Frontend validation
+        const errors = [];
+        if (!data.start_date) errors.push('יש להזין תאריך תחילת עבודה');
+        if (!data.end_date) errors.push('יש להזין תאריך סיום עבודה');
+        if (data.start_date && data.end_date && data.start_date >= data.end_date) {
+            errors.push('תאריך סיום חייב להיות מאוחר מתאריך התחלה');
+        }
+        if (!data.base_salary && !data.commissions) {
+            errors.push('יש להזין לפחות שכר בסיס או עמלות');
+        }
+        if (!rawFacts || !rawFacts.trim()) {
+            errors.push('יש להזין עובדות גולמיות לצורך יצירה באמצעות AI');
+        }
+
+        if (errors.length > 0) {
+            alert(errors.join('\n'));
+            return;
+        }
+
+        goToStep(5);
+        document.getElementById('loading').classList.add('active');
+        document.getElementById('loading-text').textContent = 'מייצר כתב תביעה באמצעות AI... (עשוי לקחת עד דקה)';
+        document.getElementById('results').style.display = 'none';
+
+        data.raw_text = rawFacts;
+        lastData = data;
+
+        try {
+            const resp = await fetch('/generate-ai', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+
+            const result = await resp.json();
+
+            if (!result.success) {
+                alert('שגיאה: ' + result.error);
+                document.getElementById('loading').classList.remove('active');
+                document.getElementById('loading-text').textContent = 'מחשב ומייצר את כתב התביעה...';
+                goToStep(4);
+                return;
+            }
+
+            lastResult = result;
+            lastAiResponse = result.ai_response;
+
+            // Display duration
+            const dur = result.calculations.duration;
+            document.getElementById('duration-display').textContent =
+                `תקופת העסקה: ${dur.total_months} חודשים (${dur.decimal_years} שנים) | שכר קובע: ${result.calculations.determining_salary.toLocaleString()} ₪`;
+
+            // Display total
+            document.getElementById('total-amount').textContent =
+                result.calculations.total.toLocaleString();
+
+            // Display claims table
+            const tbody = document.getElementById('results-tbody');
+            tbody.innerHTML = '';
+            for (const [key, claim] of Object.entries(result.calculations.claims)) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${claim.name}</td><td>${claim.amount.toLocaleString()} ₪</td>`;
+                tbody.appendChild(tr);
+            }
+            const totalTr = document.createElement('tr');
+            totalTr.className = 'total-row';
+            totalTr.innerHTML = `<td>סה"כ</td><td>${result.calculations.total.toLocaleString()} ₪</td>`;
+            tbody.appendChild(totalTr);
+
+            // Display claim text
+            document.getElementById('claim-text-preview').textContent = result.claim_text;
+
+            // Show mode badge
+            showModeBadge(result.mode);
+
+            document.getElementById('loading').classList.remove('active');
+            document.getElementById('loading-text').textContent = 'מחשב ומייצר את כתב התביעה...';
+            document.getElementById('results').style.display = 'block';
+
+        } catch (e) {
+            document.getElementById('loading').classList.remove('active');
+            document.getElementById('loading-text').textContent = 'מחשב ומייצר את כתב התביעה...';
+            alert('שגיאה בתקשורת עם השרת: ' + e.message);
+            goToStep(4);
+        }
+    }
+
+    function showModeBadge(mode) {
+        const badge = document.getElementById('generation-mode-badge');
+        if (mode === 'ai') {
+            badge.textContent = 'נוצר באמצעות AI';
+            badge.style.background = 'linear-gradient(135deg, #c6a04a, #d4af37)';
+            badge.style.color = '#1a365d';
+            badge.style.display = 'inline-block';
+        } else if (mode === 'template') {
+            badge.textContent = 'תבנית';
+            badge.style.background = '#e2e8f0';
+            badge.style.color = '#4a5568';
+            badge.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+
     async function downloadDocx() {
         if (!lastData) return;
 
         try {
+            // Include AI response in the request if available
+            const requestData = { ...lastData };
+            if (lastAiResponse) {
+                requestData._ai_response = lastAiResponse;
+            }
+
             const resp = await fetch('/generate-docx', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(lastData),
+                body: JSON.stringify(requestData),
             });
 
             if (!resp.ok) {

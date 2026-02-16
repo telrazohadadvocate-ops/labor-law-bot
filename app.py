@@ -18,6 +18,8 @@ import io
 
 import anthropic
 
+from skill_prompt import SKILL_SYSTEM_PROMPT
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "lt-labor-law-bot-secret-key-2026")
 app.config["PERMANENT_SESSION_LIFETIME"] = 86400  # 24 hours in seconds
@@ -81,6 +83,143 @@ def rewrite_as_legal_text(raw_text, context=""):
     except Exception as e:
         logging.error(f"Claude API rewrite failed: {e}")
         return raw_text
+
+
+def generate_full_claim_via_claude(raw_input, structured_data):
+    """Send raw facts + structured data to Claude API with SKILL.md system prompt.
+
+    Claude analyzes the input and produces a structured JSON response containing
+    the full כתב תביעה: sections, appendices, calculations, and legal citations.
+
+    Args:
+        raw_input: The user's raw narrative/facts text.
+        structured_data: Dict with all form data (names, dates, salary, gender, claims).
+
+    Returns:
+        Parsed JSON dict from Claude, or None if API unavailable/fails.
+    """
+    client = _get_claude_client()
+    if client is None:
+        logging.warning("ANTHROPIC_API_KEY not set — AI generation unavailable")
+        return None
+
+    # Build the user prompt with all structured data
+    gender = structured_data.get("gender", "male")
+    gender_label = "זכר" if gender == "male" else "נקבה"
+
+    # Collect selected claims
+    claim_keys = {
+        "claim_severance": "פיצויי פיטורים",
+        "claim_unpaid_salary": "שכר עבודה שלא שולם",
+        "claim_overtime": "הפרשי שכר – שעות נוספות",
+        "claim_pension": "הפרשי הפרשות לפנסיה",
+        "claim_vacation": "הפרשי דמי חופשה ופדיון חופשה",
+        "claim_holidays": "דמי חגים והפרשי דמי חג",
+        "claim_recuperation": "דמי הבראה",
+        "claim_salary_delay": "פיצויי הלנת שכר",
+        "claim_emotional": "פיצוי בגין עוגמת נפש",
+        "claim_deductions": "ניכויים שלא כדין",
+        "claim_documents": "מסירת מסמכי גמר חשבון",
+    }
+    selected_claims = []
+    for key, name in claim_keys.items():
+        if structured_data.get(key):
+            amount_key = {
+                "claim_severance": "severance",
+                "claim_unpaid_salary": "unpaid_salary_amount",
+                "claim_overtime": "overtime",
+                "claim_pension": "pension",
+                "claim_vacation": "vacation",
+                "claim_holidays": "holidays",
+                "claim_recuperation": "recuperation",
+                "claim_salary_delay": "salary_delay_amount",
+                "claim_emotional": "emotional_amount",
+                "claim_deductions": "deduction_amount",
+            }.get(key)
+            selected_claims.append(name)
+
+    termination_types = {
+        "fired": "פיטורים",
+        "resigned_justified": "התפטרות בדין מפוטר/ת",
+        "resigned": "התפטרות",
+    }
+
+    user_prompt = f"""נתוני התיק:
+- שם התובע/ת: {structured_data.get('plaintiff_name', '')}
+- ת.ז.: {structured_data.get('plaintiff_id', '')}
+- מין: {gender_label}
+- שם הנתבע/ת: {structured_data.get('defendant_name', '')}
+- ח.פ./ע.מ.: {structured_data.get('defendant_id', '')}
+- סוג נתבע: {structured_data.get('defendant_type', 'company')}
+- בעלים/מנהל: {structured_data.get('defendant_owner', '')}
+- תחום עיסוק: {structured_data.get('defendant_business', '')}
+- תפקיד: {structured_data.get('job_title', '')}
+- תאריך תחילת עבודה: {structured_data.get('start_date', '')}
+- תאריך סיום עבודה: {structured_data.get('end_date', '')}
+- סוג סיום העסקה: {termination_types.get(structured_data.get('termination_type', 'fired'), 'פיטורים')}
+- ימי עבודה בשבוע: {structured_data.get('work_days_per_week', '6')}
+- שעות עבודה ביום: {structured_data.get('hours_per_day', '')}
+- שכר בסיס: {structured_data.get('base_salary', '')} ₪
+- עמלות/תוספות: {structured_data.get('commissions', '0')} ₪
+- סדרי עבודה: {structured_data.get('work_schedule', '')}
+
+רכיבי תביעה שנבחרו: {', '.join(selected_claims)}
+
+נתונים נוספים לחישובים:
+- צבירת פיצויים בקופה: {structured_data.get('severance_deposited', '0')} ₪
+- שכר שלא שולם: {structured_data.get('unpaid_salary_amount', '0')} ₪
+- שעות נוספות 125% בשבוע: {structured_data.get('weekly_overtime_125', '0')}
+- שעות נוספות 150% בשבוע: {structured_data.get('weekly_overtime_150', '0')}
+- שכר שעתי: {structured_data.get('hourly_wage', '0')} ₪
+- שעות עבודה סטנדרטיות ביום: {structured_data.get('standard_daily_hours', '8')}
+- שעות עבודה בפועל ביום: {structured_data.get('actual_daily_hours', '0')}
+- שעות נוספות גלובליות: {structured_data.get('global_ot_hours', '0')}
+- הפקדות פנסיה שבוצעו: {structured_data.get('pension_deposited', '0')} ₪
+- ימי חופשה ששולמו: {structured_data.get('vacation_days_paid', '0')}
+- ימי חג ששולמו: {structured_data.get('holiday_days_paid', '0')}
+- ימי הבראה ששולמו: {structured_data.get('recuperation_days_paid', '0')}
+- סכום הלנת שכר: {structured_data.get('salary_delay_amount', '0')} ₪
+- סכום עוגמת נפש: {structured_data.get('emotional_amount', '25000')} ₪
+- סכום ניכויים: {structured_data.get('deduction_amount', '0')} ₪
+
+עובדות גולמיות ותיאור הנסיבות:
+{raw_input}
+"""
+
+    try:
+        message = client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=8000,
+            system=SKILL_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        response_text = message.content[0].text.strip()
+
+        # Parse JSON from response (handle possible markdown code fences)
+        if response_text.startswith("```"):
+            # Strip markdown code fences
+            lines = response_text.split("\n")
+            # Remove first line (```json) and last line (```)
+            json_lines = []
+            in_fence = False
+            for line in lines:
+                if line.strip().startswith("```") and not in_fence:
+                    in_fence = True
+                    continue
+                elif line.strip() == "```" and in_fence:
+                    break
+                elif in_fence:
+                    json_lines.append(line)
+            response_text = "\n".join(json_lines)
+
+        return json.loads(response_text)
+    except json.JSONDecodeError as e:
+        logging.error(f"Claude API returned invalid JSON: {e}")
+        logging.debug(f"Raw response: {response_text[:500]}")
+        return None
+    except Exception as e:
+        logging.error(f"Claude API full generation failed: {e}")
+        return None
 
 
 # ── Israeli Labor Law Constants ──────────────────────────────────────────────
@@ -951,6 +1090,76 @@ def generate_claim_text(data, calculations):
     return "\n".join(sections)
 
 
+def generate_claim_text_from_ai(ai_response, data, calculations):
+    """Convert Claude's structured AI response into the flat claim text format.
+
+    Takes the AI JSON response and produces a text string compatible with
+    generate_docx()'s text parsing logic.
+
+    Args:
+        ai_response: Parsed JSON dict from generate_full_claim_via_claude().
+        data: Original form data dict.
+        calculations: Results from calculate_all_claims().
+
+    Returns:
+        A newline-joined string of the claim text.
+    """
+    sections = []
+
+    sections.append("כ ת ב    ת ב י ע ה")
+    sections.append("")
+
+    for section in ai_response.get("sections", []):
+        header = section.get("header", "")
+        if header:
+            sections.append(header)
+
+        for para in section.get("paragraphs", []):
+            if para:
+                sections.append(para)
+
+        sections.append("")
+
+    # Add summary section using calculated amounts (authoritative source)
+    claims = calculations.get("claims", {})
+    total = calculations.get("total", 0)
+
+    if claims:
+        sections.append("סיכום")
+        sections.append("סיכום רכיבי התביעה:")
+        sections.append("")
+
+        for key, claim in claims.items():
+            sections.append(f"• {claim['name']}: {claim['amount']:,.0f} ₪")
+
+        sections.append("")
+        sections.append(
+            f"סה\"כ סכום התביעה: {total:,.0f} ₪ קרן (לא כולל הצמדה וריבית, שכ\"ט עו\"ד והוצאות)"
+        )
+        sections.append("")
+
+    # Final closing paragraphs
+    gender = data.get("gender", "male")
+    pronoun = "התובע" if gender == "male" else "התובעת"
+    g_obligate = "לחייבו" if gender == "male" else "לחייבה"
+    g_his_rights = "זכויותיו" if gender == "male" else "זכויותיה"
+
+    sections.append(
+        f"לאור ההפרות החמורות של {g_his_rights} של {pronoun} המתוארות בהרחבה בכתב תביעה זה, "
+        f"מתבקש בית הדין הנכבד להזמין את הנתבעת לדין, ו{g_obligate} במלוא סכום התביעה "
+        f"בצירוף הפרשי הצמדה וריבית לפי העניין מקום העילה ועד מועד התשלום בפועל "
+        f"כמו גם בסעדים ההצהרתיים המבוקשים."
+    )
+    sections.append(
+        f"בנוסף, מתבקש בית הדין הנכבד לחייב את הנתבעת בתשלום הוצאות, שכ\"ט עו\"ד ומע\"מ בגינו."
+    )
+    sections.append(
+        "בית הדין הנכבד מוסמך לדון בתביעה זו לאור מהותה, סכומה, מקום ביצוע העבודה ומענה של הנתבעת."
+    )
+
+    return "\n".join(sections)
+
+
 def generate_docx(data, calculations, claim_text):
     """Generate a Word document matching SKILL.md specifications exactly.
 
@@ -1771,12 +1980,61 @@ def calculate():
         return jsonify({"success": False, "error": str(e)}), 400
 
 
+@app.route("/generate-ai", methods=["POST"])
+def generate_ai_route():
+    """AI-powered full claim generation using SKILL.md system prompt."""
+    data = request.json
+    raw_text = data.get("raw_text", "")
+
+    if not raw_text or not raw_text.strip():
+        return jsonify({"success": False, "error": "יש להזין עובדות גולמיות לטקסט"}), 400
+
+    try:
+        # Calculate claims using existing logic (for amounts and fallback)
+        calculations = calculate_all_claims(data)
+
+        # Generate via Claude AI
+        ai_response = generate_full_claim_via_claude(raw_text, data)
+
+        if ai_response is None:
+            # Fallback to template-based generation
+            claim_text = generate_claim_text(data, calculations)
+            return jsonify({
+                "success": True,
+                "mode": "template",
+                "calculations": calculations,
+                "claim_text": claim_text,
+                "ai_response": None,
+            })
+
+        # Generate claim text from AI response for preview
+        claim_text = generate_claim_text_from_ai(ai_response, data, calculations)
+
+        return jsonify({
+            "success": True,
+            "mode": "ai",
+            "calculations": calculations,
+            "claim_text": claim_text,
+            "ai_response": ai_response,
+        })
+    except Exception as e:
+        logging.error(f"AI generation route error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 400
+
+
 @app.route("/generate-docx", methods=["POST"])
 def generate_docx_route():
     data = request.json
     try:
         calculations = calculate_all_claims(data)
-        claim_text = generate_claim_text(data, calculations)
+
+        # Check if AI response is provided (from /generate-ai flow)
+        ai_response = data.get("_ai_response")
+        if ai_response:
+            claim_text = generate_claim_text_from_ai(ai_response, data, calculations)
+        else:
+            claim_text = generate_claim_text(data, calculations)
+
         doc = generate_docx(data, calculations, claim_text)
 
         buffer = io.BytesIO()
