@@ -22,7 +22,9 @@ from skill_prompt import SKILL_SYSTEM_PROMPT
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "lt-labor-law-bot-secret-key-2026")
-app.config["PERMANENT_SESSION_LIFETIME"] = 86400  # 24 hours in seconds
+app.config["PERMANENT_SESSION_LIFETIME"] = 86400 * 7  # 7 days in seconds
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("RENDER", "") != ""  # Secure on Render (HTTPS)
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "LT2026")
 
@@ -45,7 +47,10 @@ def _get_claude_client():
     """Lazy-init Anthropic client."""
     global _claude_client
     if _claude_client is None and ANTHROPIC_API_KEY:
-        _claude_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        _claude_client = anthropic.Anthropic(
+            api_key=ANTHROPIC_API_KEY,
+            timeout=90.0,  # 90s timeout for AI generation requests
+        )
     return _claude_client
 
 
@@ -216,6 +221,12 @@ def generate_full_claim_via_claude(raw_input, structured_data):
     except json.JSONDecodeError as e:
         logging.error(f"Claude API returned invalid JSON: {e}")
         logging.debug(f"Raw response: {response_text[:500]}")
+        return None
+    except anthropic.APITimeoutError as e:
+        logging.error(f"Claude API timed out: {e}")
+        return None
+    except anthropic.APIError as e:
+        logging.error(f"Claude API error: {e}")
         return None
     except Exception as e:
         logging.error(f"Claude API full generation failed: {e}")
@@ -2002,6 +2013,7 @@ def calculate():
 @app.route("/generate-ai", methods=["POST"])
 def generate_ai_route():
     """AI-powered full claim generation using SKILL.md system prompt."""
+    logging.info("generate-ai: request received")
     data = request.json
     raw_text = data.get("raw_text", "")
 
@@ -2011,9 +2023,11 @@ def generate_ai_route():
     try:
         # Calculate claims using existing logic (for amounts and fallback)
         calculations = calculate_all_claims(data)
+        logging.info("generate-ai: calculations done, calling Claude API...")
 
         # Generate via Claude AI
         ai_response = generate_full_claim_via_claude(raw_text, data)
+        logging.info(f"generate-ai: Claude API returned, ai_response is {'present' if ai_response else 'None'}")
 
         if ai_response is None:
             # Fallback to template-based generation
