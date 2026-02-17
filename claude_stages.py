@@ -12,8 +12,8 @@ import traceback
 import anthropic
 
 MODEL = "claude-haiku-4-5-20251001"
-MAX_TOKENS = 3000
-API_TIMEOUT = 30.0
+MAX_TOKENS = 4096
+API_TIMEOUT = 60.0
 
 SYSTEM_PROMPT_MALE = """אתה עורך דין ישראלי לדיני עבודה. כתוב כתב תביעה מלא בעברית משפטית רשמית.
 

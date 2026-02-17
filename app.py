@@ -1164,8 +1164,13 @@ def generate_claim_text_from_ai(ai_response, data, calculations):
     return "\n".join(sections)
 
 
-def generate_docx(data, calculations, claim_text, ai_section_headers=None):
+def generate_docx(data, calculations, claim_text=None, ai_sections=None,
+                   appendices=None, raw_facts=""):
     """Generate a Word document matching SKILL.md specifications exactly.
+
+    When ai_sections is provided, writes AI-generated content directly into the
+    document body (bypassing fragile text re-parsing). Falls back to claim_text
+    parsing when ai_sections is not available (template mode).
 
     SKILL.md specs:
     - Page: US Letter (12240 × 15840 twips), margins top=709 right=1800 bottom=1276 left=1800
@@ -1798,59 +1803,144 @@ def generate_docx(data, calculations, claim_text, ai_section_headers=None):
     # ── Title ────────────────────────────────────────────────────────────
     add_title('כ ת ב    ת ב י ע ה')
 
-    # ── Body - Parse claim_text and format properly ──────────────────────
-    base_section_headers = {
-        "כללי", "הצדדים", "רקע עובדתי", "היקף משרה ושכר קובע",
-        "רכיבי התביעה", "סיכום",
-        "שכר עבודה שלא שולם", "הפרשי שכר – שעות נוספות",
-        "הפרשי הפרשות לפנסיה", "פיצויי פיטורים",
-        "חלף הודעה מוקדמת",
-        "הפרשי שכר דמי חופשה ופדיון חופשה",
-        "דמי חגים והפרשי דמי חג", "דמי הבראה",
-        "ניכויים שלא כדין – תגמולי עובד", "פיצויי הלנת שכר",
-        "פיצוי בגין עוגמת נפש", "מסירת מסמכי גמר חשבון",
-        "עילות התביעה", "הסעדים המבוקשים",
-        "תחשיב שעות נוספות שהיה צריך לשלם בכל חודש:",
-    }
-    if ai_section_headers:
-        section_headers = base_section_headers | set(ai_section_headers)
-    else:
-        section_headers = base_section_headers
-
+    # ── Body — Write content into document ─────────────────────────────
     import re as _re
     def _line_has_hebrew(t):
         return bool(_re.search(r'[\u0590-\u05FF]', t))
 
-    lines = claim_text.split("\n")
-    in_summary = False
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        # Skip lines with no Hebrew (English artifacts, JSON keys, separators)
-        if not _line_has_hebrew(stripped):
-            continue
-        elif stripped == "כ ת ב    ת ב י ע ה":
-            continue
-        elif stripped == "סיכום רכיבי התביעה:":
-            add_section_header(stripped)
-            in_summary = True
-            continue
-        elif in_summary and stripped.startswith("•"):
-            continue  # Skip bullet items; we'll use summary table instead
-        elif in_summary and not stripped.startswith("•") and "סה\"כ סכום התביעה" not in stripped:
-            in_summary = False
-            # Fall through to normal processing
-        elif "סה\"כ סכום התביעה" in stripped:
-            continue  # Skip; shown in summary table
-        if stripped in section_headers:
-            add_section_header(stripped)
-        elif stripped.startswith("תלושי שכר") and "נספח" in stripped:
-            add_appendix_ref(stripped)
-        elif any(c in stripped for c in ['=', '×']) and '₪' in stripped:
-            add_calculation_line(stripped)
+    def _is_english_only_line(t):
+        return not bool(_re.search(r'[\u0590-\u05FF]', t))
+
+    def _fix_gender_text(text):
+        """Replace gender-neutral slashed forms with the correct gender form."""
+        if gender == "male":
+            replacements = {
+                "התובע/ת": "התובע", "זכאי/ת": "זכאי", "עובד/ת": "עובד",
+                "הועסק/ה": "הועסק", "פוטר/ה": "פוטר", "מיוצג/ת": "מיוצג",
+                "מגיש/ה": "מגיש", "טוען/ת": "טוען", "יבקש/תבקש": "יבקש",
+                "שכרו/ה": "שכרו", "עבודתו/ה": "עבודתו", "זכויותיו/ה": "זכויותיו",
+                "העסקתו/ה": "העסקתו", "נאלץ/ה": "נאלץ", "החל/ה": "החל",
+                "ביצע/ה": "ביצע", "עבד/ה": "עבד", "היה/תה": "היה",
+                "מצוין/ת": "מצוין", "מקצועי/ת": "מקצועי",
+            }
         else:
-            add_numbered_para(stripped)
+            replacements = {
+                "התובע/ת": "התובעת", "זכאי/ת": "זכאית", "עובד/ת": "עובדת",
+                "הועסק/ה": "הועסקה", "פוטר/ה": "פוטרה", "מיוצג/ת": "מיוצגת",
+                "מגיש/ה": "מגישה", "טוען/ת": "טוענת", "יבקש/תבקש": "תבקש",
+                "שכרו/ה": "שכרה", "עבודתו/ה": "עבודתה", "זכויותיו/ה": "זכויותיה",
+                "העסקתו/ה": "העסקתה", "נאלץ/ה": "נאלצה", "החל/ה": "החלה",
+                "ביצע/ה": "ביצעה", "עבד/ה": "עבדה", "היה/תה": "היתה",
+                "מצוין/ת": "מצוינת", "מקצועי/ת": "מקצועית",
+            }
+        for pattern, replacement in replacements.items():
+            text = text.replace(pattern, replacement)
+        return text
+
+    if ai_sections:
+        # ── AI MODE: Write AI-generated sections directly into the document ──
+        logging.info(f"generate_docx: AI mode — writing {len(ai_sections)} sections directly")
+
+        for sec_idx, section in enumerate(ai_sections):
+            header = section.get("header", "")
+            paragraphs = section.get("paragraphs", [])
+
+            # Skip sections that are just the summary (we render our own table)
+            if header and ("סיכום רכיבי" in header or header == "סיכום"):
+                logging.info(f"  Skipping summary section: '{header}'")
+                continue
+
+            # Write section header
+            if header and _line_has_hebrew(header):
+                header = _fix_gender_text(header)
+                add_section_header(header)
+                logging.info(f"  Section header: '{header}' with {len(paragraphs)} paragraphs")
+
+            # If this is the רקע עובדתי section and we have raw facts, inject them
+            if header and "רקע עובדתי" in header and raw_facts and raw_facts.strip():
+                # Add raw facts as a paragraph before the AI's legal narrative
+                raw_facts_clean = _fix_gender_text(raw_facts.strip())
+                add_numbered_para(f"להלן העובדות כפי שנמסרו: {raw_facts_clean}")
+
+            # Write each paragraph from this section
+            for para in paragraphs:
+                para_text = str(para).strip()
+                if not para_text:
+                    continue
+                # Skip English-only paragraphs
+                if _is_english_only_line(para_text):
+                    logging.warning(f"  Skipping English-only paragraph: '{para_text[:80]}'")
+                    continue
+                # Fix gender forms
+                para_text = _fix_gender_text(para_text)
+                # Detect appendix references
+                if para_text.startswith("◄") or ("נספח" in para_text and "מצ\"ב" in para_text):
+                    add_appendix_ref(para_text.lstrip("◄ "))
+                # Detect calculation lines
+                elif any(c in para_text for c in ['=', '×']) and '₪' in para_text:
+                    add_calculation_line(para_text)
+                else:
+                    add_numbered_para(para_text)
+
+        # Write appendix references from AI
+        if appendices:
+            for app_item in appendices:
+                if isinstance(app_item, dict):
+                    ref_text = app_item.get("reference_text", app_item.get("description", ""))
+                elif isinstance(app_item, str):
+                    ref_text = app_item
+                else:
+                    continue
+                if ref_text and _line_has_hebrew(ref_text):
+                    add_appendix_ref(_fix_gender_text(ref_text))
+
+    else:
+        # ── TEMPLATE MODE: Parse flat claim_text string ──────────────────
+        logging.info("generate_docx: Template mode — parsing claim_text")
+        base_section_headers = {
+            "כללי", "הצדדים", "רקע עובדתי", "היקף משרה ושכר קובע",
+            "רכיבי התביעה", "סיכום",
+            "שכר עבודה שלא שולם", "הפרשי שכר – שעות נוספות",
+            "הפרשי הפרשות לפנסיה", "פיצויי פיטורים",
+            "חלף הודעה מוקדמת",
+            "הפרשי שכר דמי חופשה ופדיון חופשה",
+            "דמי חגים והפרשי דמי חג", "דמי הבראה",
+            "ניכויים שלא כדין – תגמולי עובד", "פיצויי הלנת שכר",
+            "פיצוי בגין עוגמת נפש", "מסירת מסמכי גמר חשבון",
+            "עילות התביעה", "הסעדים המבוקשים",
+            "תחשיב שעות נוספות שהיה צריך לשלם בכל חודש:",
+        }
+        section_headers = base_section_headers
+
+        lines = claim_text.split("\n") if claim_text else []
+        in_summary = False
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if not _line_has_hebrew(stripped):
+                continue
+            elif stripped == "כ ת ב    ת ב י ע ה":
+                continue
+            elif stripped == "סיכום רכיבי התביעה:":
+                add_section_header(stripped)
+                in_summary = True
+                continue
+            elif in_summary and stripped.startswith("•"):
+                continue
+            elif in_summary and not stripped.startswith("•") and "סה\"כ סכום התביעה" not in stripped:
+                in_summary = False
+            elif "סה\"כ סכום התביעה" in stripped:
+                continue
+            stripped = _fix_gender_text(stripped)
+            if stripped in section_headers:
+                add_section_header(stripped)
+            elif stripped.startswith("תלושי שכר") and "נספח" in stripped:
+                add_appendix_ref(stripped)
+            elif any(c in stripped for c in ['=', '×']) and '₪' in stripped:
+                add_calculation_line(stripped)
+            else:
+                add_numbered_para(stripped)
 
     # ── End Summary Table (must match header summary) ────────────────────
     add_section_header("סיכום רכיבי התביעה")
@@ -1861,15 +1951,22 @@ def generate_docx(data, calculations, claim_text, ai_section_headers=None):
         bold=True
     )
 
-    # Final legal paragraphs from claim text (after the summary section)
-    found_summary_end = False
-    for line in lines:
-        stripped = line.strip()
-        if "סה\"כ סכום התביעה" in stripped:
-            found_summary_end = True
-            continue
-        if found_summary_end and stripped:
-            add_numbered_para(stripped)
+    # ── Final closing paragraphs ─────────────────────────────────────────
+    g_obligate = "לחייבו" if gender == "male" else "לחייבה"
+    g_his_rights = "זכויותיו" if gender == "male" else "זכויותיה"
+
+    add_numbered_para(
+        f"לאור ההפרות החמורות של {g_his_rights} של {pronoun} המתוארות בהרחבה בכתב תביעה זה, "
+        f"מתבקש בית הדין הנכבד להזמין את הנתבעת לדין, ו{g_obligate} במלוא סכום התביעה "
+        f"בצירוף הפרשי הצמדה וריבית לפי העניין מקום העילה ועד מועד התשלום בפועל "
+        f"כמו גם בסעדים ההצהרתיים המבוקשים."
+    )
+    add_numbered_para(
+        f"בנוסף, מתבקש בית הדין הנכבד לחייב את הנתבעת בתשלום הוצאות, שכ\"ט עו\"ד ומע\"מ בגינו."
+    )
+    add_numbered_para(
+        "בית הדין הנכבד מוסמך לדון בתביעה זו לאור מהותה, סכומה, מקום ביצוע העבודה ומענה של הנתבעת."
+    )
 
     # ── Power of Attorney Note ───────────────────────────────────────────
     add_appendix_ref('ייפוי כוח מצורף לכתב התביעה')
@@ -2062,7 +2159,16 @@ def generate_ai_route():
         )
 
         if ai_response is not None:
+            num_sections = len(ai_response.get("sections", []))
+            total_paras = sum(len(s.get("paragraphs", [])) for s in ai_response.get("sections", []))
+            logging.info(f"generate-ai: AI returned {num_sections} sections, {total_paras} total paragraphs")
+            for i, s in enumerate(ai_response.get("sections", [])):
+                h = s.get("header", "")
+                p_count = len(s.get("paragraphs", []))
+                logging.info(f"  [{i}] '{h}' — {p_count} paragraphs")
+
             claim_text = generate_claim_text_from_ai(ai_response, data, calculations)
+            logging.info(f"generate-ai: claim_text length = {len(claim_text)} chars")
             preview = _build_preview(ai_response, calculations)
             return jsonify({
                 "success": True,
@@ -2115,15 +2221,25 @@ def generate_docx_route():
 
         # Check if AI response is provided (from /generate-ai flow)
         ai_response = data.get("_ai_response")
-        ai_section_headers = None
-        if ai_response:
-            claim_text = generate_claim_text_from_ai(ai_response, data, calculations)
-            # Extract AI section headers for dynamic formatting in DOCX
-            ai_section_headers = [s.get("header", "") for s in ai_response.get("sections", []) if s.get("header")]
-        else:
-            claim_text = generate_claim_text(data, calculations)
+        raw_facts = data.get("raw_text", "")
 
-        doc = generate_docx(data, calculations, claim_text, ai_section_headers=ai_section_headers)
+        logging.info(f"generate-docx: ai_response present = {ai_response is not None}")
+        if ai_response:
+            num_sections = len(ai_response.get("sections", []))
+            logging.info(f"generate-docx: AI response has {num_sections} sections")
+            for i, s in enumerate(ai_response.get("sections", [])):
+                h = s.get("header", "")
+                paras = s.get("paragraphs", [])
+                logging.info(f"  section[{i}]: header='{h}', {len(paras)} paragraphs, first para preview='{str(paras[0])[:80]}...'" if paras else f"  section[{i}]: header='{h}', 0 paragraphs")
+            logging.info(f"generate-docx: raw_facts length = {len(raw_facts)}")
+
+        if ai_response and ai_response.get("sections"):
+            doc = generate_docx(data, calculations, ai_sections=ai_response.get("sections", []),
+                                appendices=ai_response.get("appendices", []), raw_facts=raw_facts)
+        else:
+            logging.warning("generate-docx: No AI sections — falling back to template mode")
+            claim_text = generate_claim_text(data, calculations)
+            doc = generate_docx(data, calculations, claim_text=claim_text)
 
         buffer = io.BytesIO()
         doc.save(buffer)
