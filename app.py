@@ -2042,17 +2042,13 @@ def generate_ai_route():
         logging.info(f"generate-ai: Claude API returned, ai_response is {'present' if ai_response else 'None'}")
 
         if ai_response is None:
-            # Fallback to template-based generation
-            logging.warning("generate-ai: Claude returned None — FALLING BACK to template mode (raw_text will NOT be used)")
-            claim_text = generate_claim_text(data, calculations)
+            # AI failed — return error instead of silently falling back to template
+            # (template mode ignores raw_text, making user think their input was lost)
+            logging.warning("generate-ai: Claude returned None — AI generation failed")
             return jsonify({
-                "success": True,
-                "mode": "template",
-                "calculations": calculations,
-                "claim_text": claim_text,
-                "ai_response": None,
-                "fallback_reason": "Claude API failed — used template instead",
-            })
+                "success": False,
+                "error": "שירות ה-AI אינו זמין כרגע. ניתן לנסות שוב מאוחר יותר, או להשתמש בכפתור 'חשב וצור כתב תביעה (תבנית)' ליצירה ללא AI.",
+            }), 503
 
         # Generate claim text from AI response for preview
         claim_text = generate_claim_text_from_ai(ai_response, data, calculations)
