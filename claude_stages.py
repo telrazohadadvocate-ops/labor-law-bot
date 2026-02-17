@@ -4,8 +4,8 @@ Two-stage AI generation pipeline for כתב תביעה documents.
 Stage 1 (Analyst): Haiku — fast analysis → sections, laws, appendices
 Stage 2 (Drafter): Haiku — full document generation with streaming
 
-All calls use Haiku for speed (under Render's 60s limit).
-API timeout: 55s. Hard timeout: 55s.
+All calls use Haiku for speed. Gunicorn timeout: 180s.
+API timeout: 120s. Hard timeout: 150s.
 """
 
 import json
@@ -20,8 +20,8 @@ MODEL = "claude-haiku-4-5-20251001"
 
 # ── Timeouts ──────────────────────────────────────────────────────────────────
 
-API_TIMEOUT = 55.0     # Anthropic client timeout (under Render's 60s)
-HARD_TIMEOUT = 55      # Pipeline hard timeout in seconds
+API_TIMEOUT = 120.0    # Anthropic client timeout per request
+HARD_TIMEOUT = 150     # Pipeline hard timeout (under gunicorn's 180s)
 
 # ── Stage 1: Analyst ─────────────────────────────────────────────────────────
 
