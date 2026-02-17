@@ -1481,6 +1481,9 @@ def generate_docx(data, calculations, claim_text=None, ai_sections=None,
         tblPr = tbl.find(qn('w:tblPr'))
         if tblPr is None:
             tblPr = etree.SubElement(tbl, qn('w:tblPr'))
+        # Remove existing tblBorders if any
+        for existing in tblPr.findall(qn('w:tblBorders')):
+            tblPr.remove(existing)
         tblBorders = etree.SubElement(tblPr, qn('w:tblBorders'))
         for bn in ['top', 'left', 'bottom', 'right', 'insideH', 'insideV']:
             b = etree.SubElement(tblBorders, qn(f'w:{bn}'))
@@ -1655,15 +1658,17 @@ def generate_docx(data, calculations, claim_text=None, ai_sections=None,
         va = etree.SubElement(tcPr, qn('w:vAlign'))
         va.set(qn('w:val'), val)
 
-    # ── Table 1: Top Header (INVISIBLE borders, NO bidiVisual) ─────────
-    # Without bidiVisual: cell[0]=LEFT, cell[1]=RIGHT
-    # LEFT = court name (2 lines), RIGHT = סע"ש / בפני
+    # ── Table 1: Top Header (INVISIBLE borders, bidiVisual for RTL) ────
+    # With bidiVisual: cell[0]=RIGHT side, cell[1]=LEFT side
+    # RIGHT = סע"ש / בפני, LEFT = court name
     hdr_tbl = doc.add_table(rows=1, cols=2)
     hdr_el = hdr_tbl._element
     hdr_tblPr = hdr_el.find(qn('w:tblPr'))
     if hdr_tblPr is None:
         hdr_tblPr = etree.SubElement(hdr_el, qn('w:tblPr'))
 
+    # bidiVisual BEFORE tblW — makes cell[0] the RIGHT side
+    etree.SubElement(hdr_tblPr, qn('w:bidiVisual'))
     hdr_tblW = etree.SubElement(hdr_tblPr, qn('w:tblW'))
     hdr_tblW.set(qn('w:type'), 'dxa')
     hdr_tblW.set(qn('w:w'), '9026')
@@ -1689,17 +1694,17 @@ def generate_docx(data, calculations, claim_text=None, ai_sections=None,
             court_base = parts[0]
             court_location = "ב" + parts[1]
 
-    # cell[0] = LEFT side: court name on 2 lines
-    court_lines = [(court_base, True, 12, WD_ALIGN_PARAGRAPH.LEFT)]
-    if court_location:
-        court_lines.append((court_location, True, 12, WD_ALIGN_PARAGRAPH.LEFT))
-    set_cell_multiline(hdr_tbl.rows[0].cells[0], court_lines)
-
-    # cell[1] = RIGHT side: סע"ש and בפני
-    set_cell_multiline(hdr_tbl.rows[0].cells[1], [
+    # cell[0] = RIGHT side of page: סע"ש and בפני
+    set_cell_multiline(hdr_tbl.rows[0].cells[0], [
         ('סע"ש ________', False, 11, WD_ALIGN_PARAGRAPH.RIGHT),
         ('בפני _________', False, 11, WD_ALIGN_PARAGRAPH.RIGHT),
     ])
+
+    # cell[1] = LEFT side of page: court name on 2 lines
+    court_lines = [(court_base, True, 12, WD_ALIGN_PARAGRAPH.LEFT)]
+    if court_location:
+        court_lines.append((court_location, True, 12, WD_ALIGN_PARAGRAPH.LEFT))
+    set_cell_multiline(hdr_tbl.rows[0].cells[1], court_lines)
 
     # ── Table 2: Parties Section (VISIBLE borders) ───────────────────────
     # Rows: בעניין, plaintiff, נגד, defendant, מהות/סכום
