@@ -102,7 +102,7 @@ def rewrite_as_legal_text(raw_text, context=""):
 
     try:
         message = client.messages.create(
-            model="claude-sonnet-4-5-20250929",
+            model="claude-haiku-4-5-20251001",
             max_tokens=2000,
             system=LEGAL_REWRITE_SYSTEM,
             messages=[{"role": "user", "content": user_prompt}],
