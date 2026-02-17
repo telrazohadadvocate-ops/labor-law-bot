@@ -20,6 +20,8 @@ import anthropic
 
 from skill_prompt import SKILL_SYSTEM_PROMPT
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "lt-labor-law-bot-secret-key-2026")
 app.config["PERMANENT_SESSION_LIFETIME"] = 86400 * 7  # 7 days in seconds
@@ -103,6 +105,8 @@ def generate_full_claim_via_claude(raw_input, structured_data):
     Returns:
         Parsed JSON dict from Claude, or None if API unavailable/fails.
     """
+    logging.info(f"generate_full_claim_via_claude: raw_input length={len(raw_input) if raw_input else 0}")
+    logging.info(f"generate_full_claim_via_claude: raw_input preview={repr(raw_input[:200]) if raw_input else 'EMPTY'}")
     client = _get_claude_client()
     if client is None:
         logging.warning("ANTHROPIC_API_KEY not set — AI generation unavailable")
@@ -191,6 +195,9 @@ def generate_full_claim_via_claude(raw_input, structured_data):
 {raw_input}
 """
 
+    logging.info(f"generate_full_claim_via_claude: user_prompt length={len(user_prompt)}")
+    logging.debug(f"generate_full_claim_via_claude: user_prompt=\n{user_prompt[:1000]}")
+
     try:
         message = client.messages.create(
             model="claude-sonnet-4-5-20250929",
@@ -199,6 +206,7 @@ def generate_full_claim_via_claude(raw_input, structured_data):
             messages=[{"role": "user", "content": user_prompt}],
         )
         response_text = message.content[0].text.strip()
+        logging.info(f"generate_full_claim_via_claude: Claude response length={len(response_text)}")
 
         # Parse JSON from response (handle possible markdown code fences)
         if response_text.startswith("```"):
@@ -2016,8 +2024,12 @@ def generate_ai_route():
     logging.info("generate-ai: request received")
     data = request.json
     raw_text = data.get("raw_text", "")
+    logging.info(f"generate-ai: raw_text present={'yes' if raw_text else 'NO'}, length={len(raw_text) if raw_text else 0}")
+    logging.info(f"generate-ai: raw_text preview={repr(raw_text[:200]) if raw_text else 'EMPTY'}")
+    logging.info(f"generate-ai: request keys={list(data.keys()) if data else 'NO DATA'}")
 
     if not raw_text or not raw_text.strip():
+        logging.warning("generate-ai: raw_text is empty or whitespace-only, returning 400")
         return jsonify({"success": False, "error": "יש להזין עובדות גולמיות לטקסט"}), 400
 
     try:
@@ -2031,6 +2043,7 @@ def generate_ai_route():
 
         if ai_response is None:
             # Fallback to template-based generation
+            logging.warning("generate-ai: Claude returned None — FALLING BACK to template mode (raw_text will NOT be used)")
             claim_text = generate_claim_text(data, calculations)
             return jsonify({
                 "success": True,
@@ -2038,6 +2051,7 @@ def generate_ai_route():
                 "calculations": calculations,
                 "claim_text": claim_text,
                 "ai_response": None,
+                "fallback_reason": "Claude API failed — used template instead",
             })
 
         # Generate claim text from AI response for preview

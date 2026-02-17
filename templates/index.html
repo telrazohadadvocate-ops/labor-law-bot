@@ -1071,6 +1071,8 @@
     async function generateClaimAI() {
         const data = collectData();
         const rawFacts = document.getElementById('raw_facts_input').value;
+        console.log('[AI-DEBUG] rawFacts length:', rawFacts.length);
+        console.log('[AI-DEBUG] rawFacts preview:', rawFacts.substring(0, 200));
 
         // Frontend validation
         const errors = [];
@@ -1098,6 +1100,9 @@
 
         data.raw_text = rawFacts;
         lastData = data;
+        console.log('[AI-DEBUG] data.raw_text set, length:', data.raw_text.length);
+        console.log('[AI-DEBUG] data keys:', Object.keys(data));
+        console.log('[AI-DEBUG] sending request body size:', JSON.stringify(data).length);
 
         try {
             const resp = await fetch('/generate-ai', {
@@ -1119,6 +1124,18 @@
                 document.getElementById('loading-text').textContent = 'מחשב ומייצר את כתב התביעה...';
                 goToStep(4);
                 return;
+            }
+
+            console.log('[AI-DEBUG] response mode:', result.mode);
+            console.log('[AI-DEBUG] ai_response present:', !!result.ai_response);
+            console.log('[AI-DEBUG] claim_text length:', result.claim_text ? result.claim_text.length : 0);
+            if (result.fallback_reason) {
+                console.warn('[AI-DEBUG] FALLBACK:', result.fallback_reason);
+            }
+
+            // Warn user if AI failed and fell back to template mode
+            if (result.mode === 'template' && rawFacts && rawFacts.trim()) {
+                alert('שים לב: שירות ה-AI לא זמין כרגע. כתב התביעה נוצר באמצעות תבנית ואינו כולל את העובדות הגולמיות שהזנת. נסה שוב מאוחר יותר.');
             }
 
             lastResult = result;
