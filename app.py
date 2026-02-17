@@ -19,8 +19,7 @@ import io
 
 import anthropic
 
-from skill_prompt import SKILL_SYSTEM_PROMPT
-from claude_stages import generate_claim_single
+from claude_stages import generate_claim_single, fix_gender, parse_plain_text_sections
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
@@ -1080,106 +1079,13 @@ def generate_claim_text(data, calculations):
     return "\n".join(sections)
 
 
-def generate_claim_text_from_ai(ai_response, data, calculations):
-    """Convert Claude's structured AI response into the flat claim text format.
-
-    Takes the AI JSON response and produces a text string compatible with
-    generate_docx()'s text parsing logic. Filters out any English-only text.
-
-    Args:
-        ai_response: Parsed JSON dict from AI generation.
-        data: Original form data dict.
-        calculations: Results from calculate_all_claims().
-
-    Returns:
-        A newline-joined string of the claim text.
-    """
-    import re
-
-    def _has_hebrew(text):
-        return bool(re.search(r'[\u0590-\u05FF]', text))
-
-    sections = []
-
-    sections.append("כ ת ב    ת ב י ע ה")
-    sections.append("")
-
-    for section in ai_response.get("sections", []):
-        header = section.get("header", "")
-        if header and _has_hebrew(header):
-            sections.append(header)
-
-        for para in section.get("paragraphs", []):
-            if para and _has_hebrew(str(para)):
-                sections.append(str(para))
-
-        sections.append("")
-
-    # Render appendices from AI response
-    appendices = ai_response.get("appendices", [])
-    if appendices:
-        for app_item in appendices:
-            ref_text = app_item.get("reference_text", app_item.get("description", ""))
-            if ref_text and _has_hebrew(ref_text):
-                sections.append(f"◄ {ref_text}")
-        sections.append("")
-
-    # Add summary section using calculated amounts (authoritative source)
-    claims = calculations.get("claims", {})
-    total = calculations.get("total", 0)
-
-    if claims:
-        sections.append("סיכום")
-        sections.append("סיכום רכיבי התביעה:")
-        sections.append("")
-
-        for key, claim in claims.items():
-            sections.append(f"• {claim['name']}: {claim['amount']:,.0f} ₪")
-
-        sections.append("")
-        sections.append(
-            f"סה\"כ סכום התביעה: {total:,.0f} ₪ קרן (לא כולל הצמדה וריבית, שכ\"ט עו\"ד והוצאות)"
-        )
-        sections.append("")
-
-    # Final closing paragraphs
-    gender = data.get("gender", "male")
-    pronoun = "התובע" if gender == "male" else "התובעת"
-    g_obligate = "לחייבו" if gender == "male" else "לחייבה"
-    g_his_rights = "זכויותיו" if gender == "male" else "זכויותיה"
-
-    sections.append(
-        f"לאור ההפרות החמורות של {g_his_rights} של {pronoun} המתוארות בהרחבה בכתב תביעה זה, "
-        f"מתבקש בית הדין הנכבד להזמין את הנתבעת לדין, ו{g_obligate} במלוא סכום התביעה "
-        f"בצירוף הפרשי הצמדה וריבית לפי העניין מקום העילה ועד מועד התשלום בפועל "
-        f"כמו גם בסעדים ההצהרתיים המבוקשים."
-    )
-    sections.append(
-        f"בנוסף, מתבקש בית הדין הנכבד לחייב את הנתבעת בתשלום הוצאות, שכ\"ט עו\"ד ומע\"מ בגינו."
-    )
-    sections.append(
-        "בית הדין הנכבד מוסמך לדון בתביעה זו לאור מהותה, סכומה, מקום ביצוע העבודה ומענה של הנתבעת."
-    )
-
-    return "\n".join(sections)
-
-
-def generate_docx(data, calculations, claim_text=None, ai_sections=None,
-                   appendices=None, raw_facts=""):
+def generate_docx(data, calculations, claim_text=None, ai_plain_sections=None):
     """Generate a Word document matching SKILL.md specifications exactly.
 
-    When ai_sections is provided, writes AI-generated content directly into the
-    document body (bypassing fragile text re-parsing). Falls back to claim_text
-    parsing when ai_sections is not available (template mode).
-
-    SKILL.md specs:
-    - Page: US Letter (12240 × 15840 twips), margins top=709 right=1800 bottom=1276 left=1800
-    - Font: David 12pt (24 half-points), RTL bidi, he-IL
-    - Numbered paras: ListParagraph, numId, spacing 120/120/360 auto, ind left=-149 right=-709 hanging=425
-    - Section headers: bold+underline, NO numbering, ind left=-716 right=-709 firstLine=6
-    - Appendix refs: ◄ symbol, bold+underlined, NOT numbered
-    - Summary tables: 2-col, bidiVisual BEFORE tblW, last row shaded D9E2F3
-    - Signature: 2-col table (spacer 5649 + sig 3377), top border as sig line
+    When ai_plain_sections is provided (list of {title, lines} dicts from
+    plain-text parsing), writes AI-generated content directly.
+    Falls back to claim_text parsing when ai_plain_sections is not available
+    (template mode).
     """
     from lxml import etree
 
@@ -1816,88 +1722,52 @@ def generate_docx(data, calculations, claim_text=None, ai_sections=None,
     def _is_english_only_line(t):
         return not bool(_re.search(r'[\u0590-\u05FF]', t))
 
-    def _fix_gender_text(text):
-        """Replace gender-neutral slashed forms with the correct gender form."""
-        if gender == "male":
-            replacements = {
-                "התובע/ת": "התובע", "זכאי/ת": "זכאי", "עובד/ת": "עובד",
-                "הועסק/ה": "הועסק", "פוטר/ה": "פוטר", "מיוצג/ת": "מיוצג",
-                "מגיש/ה": "מגיש", "טוען/ת": "טוען", "יבקש/תבקש": "יבקש",
-                "שכרו/ה": "שכרו", "עבודתו/ה": "עבודתו", "זכויותיו/ה": "זכויותיו",
-                "העסקתו/ה": "העסקתו", "נאלץ/ה": "נאלץ", "החל/ה": "החל",
-                "ביצע/ה": "ביצע", "עבד/ה": "עבד", "היה/תה": "היה",
-                "מצוין/ת": "מצוין", "מקצועי/ת": "מקצועי",
-            }
-        else:
-            replacements = {
-                "התובע/ת": "התובעת", "זכאי/ת": "זכאית", "עובד/ת": "עובדת",
-                "הועסק/ה": "הועסקה", "פוטר/ה": "פוטרה", "מיוצג/ת": "מיוצגת",
-                "מגיש/ה": "מגישה", "טוען/ת": "טוענת", "יבקש/תבקש": "תבקש",
-                "שכרו/ה": "שכרה", "עבודתו/ה": "עבודתה", "זכויותיו/ה": "זכויותיה",
-                "העסקתו/ה": "העסקתה", "נאלץ/ה": "נאלצה", "החל/ה": "החלה",
-                "ביצע/ה": "ביצעה", "עבד/ה": "עבדה", "היה/תה": "היתה",
-                "מצוין/ת": "מצוינת", "מקצועי/ת": "מקצועית",
-            }
-        for pattern, replacement in replacements.items():
-            text = text.replace(pattern, replacement)
-        return text
+    def _clean_line(text):
+        """Strip AI-added numbering prefixes (docx auto-numbers) and extra spaces."""
+        if not text:
+            return text
+        import re as _re
+        # Remove AI-added numbering prefixes (e.g. "1.", "2.", "12.")
+        text = _re.sub(r'^\d+\.\s+', '', text)
+        # Collapse multiple spaces
+        text = _re.sub(r'  +', ' ', text)
+        return text.strip()
 
-    if ai_sections:
-        # ── AI MODE: Write AI-generated sections directly into the document ──
-        logging.info(f"generate_docx: AI mode — writing {len(ai_sections)} sections directly")
+    if ai_plain_sections:
+        # ── AI MODE: Write plain-text parsed sections into the document ──
+        logging.info(f"generate_docx: AI mode — writing {len(ai_plain_sections)} sections")
 
-        for sec_idx, section in enumerate(ai_sections):
-            header = section.get("header", "")
-            paragraphs = section.get("paragraphs", [])
+        for sec_idx, section in enumerate(ai_plain_sections):
+            title = section.get("title", "")
+            lines = section.get("lines", [])
 
-            # Skip sections that are just the summary (we render our own table)
-            if header and ("סיכום רכיבי" in header or header == "סיכום"):
-                logging.info(f"  Skipping summary section: '{header}'")
+            # Skip the סיכום section — we render our own summary table below
+            if title and ("סיכום" in title):
+                logging.info(f"  Skipping summary section: '{title}'")
                 continue
 
-            # Write section header
-            if header and _line_has_hebrew(header):
-                header = _fix_gender_text(header)
-                add_section_header(header)
-                logging.info(f"  Section header: '{header}' with {len(paragraphs)} paragraphs")
+            # Write section title as bold+underline header (not numbered)
+            if title and _line_has_hebrew(title):
+                add_section_header(title)
+                logging.info(f"  Section: '{title}' — {len(lines)} lines")
 
-            # If this is the רקע עובדתי section and we have raw facts, inject them
-            if header and "רקע עובדתי" in header and raw_facts and raw_facts.strip():
-                # Add raw facts as a paragraph before the AI's legal narrative
-                raw_facts_clean = _fix_gender_text(raw_facts.strip())
-                add_numbered_para(f"להלן העובדות כפי שנמסרו: {raw_facts_clean}")
-
-            # Write each paragraph from this section
-            for para in paragraphs:
-                para_text = str(para).strip()
-                if not para_text:
+            # Write each content line
+            for line_text in lines:
+                line_text = _clean_line(line_text)
+                if not line_text:
                     continue
-                # Skip English-only paragraphs
-                if _is_english_only_line(para_text):
-                    logging.warning(f"  Skipping English-only paragraph: '{para_text[:80]}'")
+                # Skip English-only lines
+                if _is_english_only_line(line_text):
+                    logging.warning(f"  Skipping English-only line: '{line_text[:80]}'")
                     continue
-                # Fix gender forms
-                para_text = _fix_gender_text(para_text)
-                # Detect appendix references
-                if para_text.startswith("◄") or ("נספח" in para_text and "מצ\"ב" in para_text):
-                    add_appendix_ref(para_text.lstrip("◄ "))
-                # Detect calculation lines
-                elif any(c in para_text for c in ['=', '×']) and '₪' in para_text:
-                    add_calculation_line(para_text)
+                # Detect appendix references (◄)
+                if line_text.startswith("◄"):
+                    add_appendix_ref(line_text.lstrip("◄ "))
+                # Detect calculation lines (containing ₪ and =)
+                elif '₪' in line_text and any(c in line_text for c in ['=', '×']):
+                    add_calculation_line(line_text)
                 else:
-                    add_numbered_para(para_text)
-
-        # Write appendix references from AI
-        if appendices:
-            for app_item in appendices:
-                if isinstance(app_item, dict):
-                    ref_text = app_item.get("reference_text", app_item.get("description", ""))
-                elif isinstance(app_item, str):
-                    ref_text = app_item
-                else:
-                    continue
-                if ref_text and _line_has_hebrew(ref_text):
-                    add_appendix_ref(_fix_gender_text(ref_text))
+                    add_numbered_para(line_text)
 
     else:
         # ── TEMPLATE MODE: Parse flat claim_text string ──────────────────
@@ -1917,9 +1787,9 @@ def generate_docx(data, calculations, claim_text=None, ai_sections=None,
         }
         section_headers = base_section_headers
 
-        lines = claim_text.split("\n") if claim_text else []
+        template_lines = claim_text.split("\n") if claim_text else []
         in_summary = False
-        for line in lines:
+        for line in template_lines:
             stripped = line.strip()
             if not stripped:
                 continue
@@ -1937,7 +1807,7 @@ def generate_docx(data, calculations, claim_text=None, ai_sections=None,
                 in_summary = False
             elif "סה\"כ סכום התביעה" in stripped:
                 continue
-            stripped = _fix_gender_text(stripped)
+            stripped = fix_gender(stripped, gender)
             if stripped in section_headers:
                 add_section_header(stripped)
             elif stripped.startswith("תלושי שכר") and "נספח" in stripped:
@@ -2041,7 +1911,7 @@ def generate_docx(data, calculations, claim_text=None, ai_sections=None,
 
 def _build_preview(ai_response, calculations):
     """Build a preview object for the frontend panel."""
-    sections = [s.get("header", "") for s in ai_response.get("sections", []) if s.get("header")]
+    sections = [s.get("title", "") for s in ai_response.get("sections", []) if s.get("title")]
     claims_preview = []
     for key, claim in calculations.get("claims", {}).items():
         claims_preview.append({
@@ -2049,16 +1919,10 @@ def _build_preview(ai_response, calculations):
             "amount": claim["amount"],
             "formula": claim.get("formula", ""),
         })
-    appendices = []
-    for app in ai_response.get("appendices", []):
-        appendices.append(app.get("description", ""))
     return {
         "sections": sections,
         "claims": claims_preview,
         "total": calculations.get("total", 0),
-        "appendices": appendices,
-        "verification_notes": ai_response.get("verification_notes", []),
-        "stage_timing": ai_response.get("stage_timing", {}),
     }
 
 
@@ -2142,7 +2006,7 @@ def calculate():
 
 @app.route("/generate-ai", methods=["POST"])
 def generate_ai_route():
-    """AI-powered claim generation — single Claude call with template fallback."""
+    """AI-powered claim generation — single Claude call returning plain text."""
     logging.info("generate-ai: request received")
     data = request.json
     raw_text = data.get("raw_text", "")
@@ -2164,22 +2028,18 @@ def generate_ai_route():
         )
 
         if ai_response is not None:
-            num_sections = len(ai_response.get("sections", []))
-            total_paras = sum(len(s.get("paragraphs", [])) for s in ai_response.get("sections", []))
-            logging.info(f"generate-ai: AI returned {num_sections} sections, {total_paras} total paragraphs")
-            for i, s in enumerate(ai_response.get("sections", [])):
-                h = s.get("header", "")
-                p_count = len(s.get("paragraphs", []))
-                logging.info(f"  [{i}] '{h}' — {p_count} paragraphs")
+            sections = ai_response.get("sections", [])
+            plain_text = ai_response.get("plain_text", "")
+            logging.info(f"generate-ai: AI returned {len(sections)} sections, {len(plain_text)} chars plain text")
+            for i, s in enumerate(sections):
+                logging.info(f"  [{i}] '{s.get('title', '')}' — {len(s.get('lines', []))} lines")
 
-            claim_text = generate_claim_text_from_ai(ai_response, data, calculations)
-            logging.info(f"generate-ai: claim_text length = {len(claim_text)} chars")
             preview = _build_preview(ai_response, calculations)
             return jsonify({
                 "success": True,
                 "mode": "ai",
                 "calculations": calculations,
-                "claim_text": claim_text,
+                "claim_text": plain_text,
                 "ai_response": ai_response,
                 "preview": preview,
             })
@@ -2226,22 +2086,18 @@ def generate_docx_route():
 
         # Check if AI response is provided (from /generate-ai flow)
         ai_response = data.get("_ai_response")
-        raw_facts = data.get("raw_text", "")
 
         logging.info(f"generate-docx: ai_response present = {ai_response is not None}")
-        if ai_response:
-            num_sections = len(ai_response.get("sections", []))
-            logging.info(f"generate-docx: AI response has {num_sections} sections")
-            for i, s in enumerate(ai_response.get("sections", [])):
-                h = s.get("header", "")
-                paras = s.get("paragraphs", [])
-                logging.info(f"  section[{i}]: header='{h}', {len(paras)} paragraphs, first para preview='{str(paras[0])[:80]}...'" if paras else f"  section[{i}]: header='{h}', 0 paragraphs")
-            logging.info(f"generate-docx: raw_facts length = {len(raw_facts)}")
 
         if ai_response and ai_response.get("sections"):
-            doc = generate_docx(data, calculations, ai_sections=ai_response.get("sections", []),
-                                appendices=ai_response.get("appendices", []), raw_facts=raw_facts)
+            # AI mode: sections are already parsed as {title, lines} dicts
+            ai_sections = ai_response.get("sections", [])
+            logging.info(f"generate-docx: AI mode with {len(ai_sections)} plain-text sections")
+            for i, s in enumerate(ai_sections):
+                logging.info(f"  [{i}] '{s.get('title', '')}' — {len(s.get('lines', []))} lines")
+            doc = generate_docx(data, calculations, ai_plain_sections=ai_sections)
         else:
+            # Template fallback
             logging.warning("generate-docx: No AI sections — falling back to template mode")
             claim_text = generate_claim_text(data, calculations)
             doc = generate_docx(data, calculations, claim_text=claim_text)
