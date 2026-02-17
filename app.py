@@ -6,6 +6,7 @@ Generates Israeli labor law claims (כתבי תביעה) based on client intake 
 import json
 import math
 import logging
+import traceback
 from datetime import datetime, date
 from dateutil.relativedelta import relativedelta
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
@@ -19,7 +20,7 @@ import io
 import anthropic
 
 from skill_prompt import SKILL_SYSTEM_PROMPT
-from claude_stages import generate_claim_multistage
+from claude_stages import generate_claim_single
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
@@ -2027,11 +2028,7 @@ def calculate():
 
 @app.route("/generate-ai", methods=["POST"])
 def generate_ai_route():
-    """AI-powered full claim generation with multi-stage pipeline.
-
-    Frontend shows animated progress stages based on typical timing.
-    Server logs actual stage transitions via on_stage callback.
-    """
+    """AI-powered claim generation — single Claude call with template fallback."""
     logging.info("generate-ai: request received")
     data = request.json
     raw_text = data.get("raw_text", "")
@@ -2041,48 +2038,58 @@ def generate_ai_route():
 
     try:
         calculations = calculate_all_claims(data)
-        logging.info("generate-ai: calculations done, calling multi-stage pipeline...")
+        logging.info("generate-ai: calculations done, calling Claude API...")
 
-        stage_log = []
-
-        def on_stage(stage_name, detail):
-            stage_log.append({"stage": stage_name, "message": detail})
-            logging.info(f"generate-ai stage: {stage_name} — {detail}")
-
-        ai_response = generate_claim_multistage(
+        ai_response = generate_claim_single(
             raw_input=raw_text,
             structured_data=data,
             calculations=calculations,
             firm_patterns=_FIRM_PATTERNS,
             legal_citations=_LEGAL_CITATIONS,
             api_key=ANTHROPIC_API_KEY,
-            on_stage=on_stage,
         )
 
-        if ai_response is None:
+        if ai_response is not None:
+            claim_text = generate_claim_text_from_ai(ai_response, data, calculations)
+            preview = _build_preview(ai_response, calculations)
             return jsonify({
-                "success": False,
-                "error": "שירות ה-AI אינו זמין כרגע. ניתן לנסות שוב מאוחר יותר, או להשתמש בכפתור 'חשב וצור כתב תביעה (תבנית)' ליצירה ללא AI.",
-            }), 503
+                "success": True,
+                "mode": "ai",
+                "calculations": calculations,
+                "claim_text": claim_text,
+                "ai_response": ai_response,
+                "preview": preview,
+            })
 
-        claim_text = generate_claim_text_from_ai(ai_response, data, calculations)
-        preview = _build_preview(ai_response, calculations)
-
+        # AI failed — fall back to template mode but include the raw text
+        logging.warning("AI generation returned None — falling back to template mode")
+        claim_text = generate_claim_text(data, calculations)
+        # Prepend raw facts so they're not lost
+        claim_text = f"עובדות גולמיות שהוזנו:\n{raw_text}\n\n{'='*60}\n\n{claim_text}"
         return jsonify({
             "success": True,
-            "mode": "ai",
+            "mode": "template_fallback",
             "calculations": calculations,
             "claim_text": claim_text,
-            "ai_response": ai_response,
-            "preview": preview,
-            "stage_log": stage_log,
         })
-    except TimeoutError as e:
-        logging.error(f"AI generation timeout: {e}")
-        return jsonify({"success": False, "error": str(e)}), 504
+
     except Exception as e:
         logging.error(f"AI generation route error: {e}")
-        return jsonify({"success": False, "error": str(e)}), 400
+        logging.error(traceback.format_exc())
+        # Last resort: template mode
+        try:
+            calculations = calculate_all_claims(data)
+            claim_text = generate_claim_text(data, calculations)
+            claim_text = f"עובדות גולמיות שהוזנו:\n{raw_text}\n\n{'='*60}\n\n{claim_text}"
+            return jsonify({
+                "success": True,
+                "mode": "template_fallback",
+                "calculations": calculations,
+                "claim_text": claim_text,
+            })
+        except Exception as e2:
+            logging.error(f"Template fallback also failed: {e2}")
+            return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/generate-docx", methods=["POST"])
