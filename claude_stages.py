@@ -15,13 +15,31 @@ MODEL = "claude-haiku-4-5-20251001"
 MAX_TOKENS = 3000
 API_TIMEOUT = 30.0
 
-SYSTEM_PROMPT = """You are an Israeli labor law attorney. Given case data and facts, draft a כתב תביעה.
-Write formal legal Hebrew, third person. Reference laws where relevant.
-Use ◄ prefix for appendix references. Show calculation formulas with ₪.
-Use EXACT amounts provided. Correct gender. No invented facts. No extra claims.
+SYSTEM_PROMPT_MALE = """אתה עורך דין ישראלי לדיני עבודה. כתוב כתב תביעה מלא בעברית משפטית רשמית.
 
-Return ONLY valid JSON:
-{"gender_form":"male or female","sections":[{"title":"section title in Hebrew","content":"section body text"}],"appendices":["appendix description"]}"""
+כללים:
+- כתוב הכל בעברית בלבד. אסור אנגלית בשום מקום.
+- השתמש בגוף שלישי זכר: התובע, הועסק, פוטר, זכאי, עובד, טוען, יבקש, שכרו, עבודתו, זכויותיו
+- השתמש בסכומים המדויקים מהנתונים
+- אל תמציא עובדות שלא סופקו
+- שלב את העובדות הגולמיות בתוך סעיף רקע עובדתי
+- הפנה לחוקים ספציפיים כשרלוונטי
+
+החזר JSON בלבד:
+{"sections":[{"title":"כותרת הסעיף","content":"תוכן הסעיף בעברית"}],"appendices":["תיאור נספח"]}"""
+
+SYSTEM_PROMPT_FEMALE = """את עורכת דין ישראלית לדיני עבודה. כתבי כתב תביעה מלא בעברית משפטית רשמית.
+
+כללים:
+- כתבי הכל בעברית בלבד. אסור אנגלית בשום מקום.
+- השתמשי בגוף שלישי נקבה: התובעת, הועסקה, פוטרה, זכאית, עובדת, טוענת, תבקש, שכרה, עבודתה, זכויותיה
+- השתמשי בסכומים המדויקים מהנתונים
+- אל תמציאי עובדות שלא סופקו
+- שלבי את העובדות הגולמיות בתוך סעיף רקע עובדתי
+- הפני לחוקים ספציפיים כשרלוונטי
+
+החזירי JSON בלבד:
+{"sections":[{"title":"כותרת הסעיף","content":"תוכן הסעיף בעברית"}],"appendices":["תיאור נספח"]}"""
 
 
 def generate_claim_single(raw_input, structured_data, calculations,
@@ -40,6 +58,7 @@ def generate_claim_single(raw_input, structured_data, calculations,
 
     gender = structured_data.get("gender", "male")
     gender_label = "זכר" if gender == "male" else "נקבה"
+    pronoun = "התובע" if gender == "male" else "התובעת"
 
     calc_lines = []
     for key, claim in calculations.get("claims", {}).items():
@@ -48,32 +67,55 @@ def generate_claim_single(raw_input, structured_data, calculations,
             line += f" ({claim['formula']})"
         calc_lines.append(line)
 
-    user_prompt = f"""נתוני התיק:
-שם: {structured_data.get('plaintiff_name', '')} | ת.ז.: {structured_data.get('plaintiff_id', '')} | מין: {gender_label}
-נתבע: {structured_data.get('defendant_name', '')} | ח.פ.: {structured_data.get('defendant_id', '')}
-תפקיד: {structured_data.get('job_title', '')}
-תקופה: {structured_data.get('start_date', '')} – {structured_data.get('end_date', '')}
-סיום: {structured_data.get('termination_type', 'fired')}
-שכר: {structured_data.get('base_salary', '')} ₪ | עמלות: {structured_data.get('commissions', '0')} ₪
-שכר קובע: {calculations.get('determining_salary', 0):,.0f} ₪
+    termination_type = structured_data.get("termination_type", "fired")
+    if termination_type == "fired":
+        termination_he = "פוטר" if gender == "male" else "פוטרה"
+    elif termination_type == "resigned_justified":
+        termination_he = "התפטר בדין מפוטר" if gender == "male" else "התפטרה בדין מפוטרת"
+    else:
+        termination_he = "התפטר" if gender == "male" else "התפטרה"
 
-חישובים (סכומים מחייבים):
+    user_prompt = f"""נתוני התיק:
+שם {pronoun}: {structured_data.get('plaintiff_name', '')}
+ת.ז.: {structured_data.get('plaintiff_id', '')}
+מין: {gender_label}
+שם הנתבעת: {structured_data.get('defendant_name', '')}
+ח.פ./ע.מ.: {structured_data.get('defendant_id', '')}
+תפקיד: {structured_data.get('job_title', '')}
+תחילת עבודה: {structured_data.get('start_date', '')}
+סיום עבודה: {structured_data.get('end_date', '')}
+אופן סיום: {termination_he}
+שכר בסיס: {structured_data.get('base_salary', '')} ₪
+עמלות/תוספות: {structured_data.get('commissions', '0')} ₪
+שכר קובע: {calculations.get('determining_salary', 0):,.0f} ₪
+תקופת העסקה: {calculations.get('duration', {}).get('total_months', 0)} חודשים ({calculations.get('duration', {}).get('decimal_years', 0)} שנים)
+
+חישובים (סכומים מחייבים — השתמש בדיוק בסכומים אלה):
 {chr(10).join(calc_lines)}
 סה"כ: {calculations.get('total', 0):,.0f} ₪
 
-עובדות:
+עובדות גולמיות (חובה לשלב בסעיף רקע עובדתי):
 {raw_input}
 
-Generate כתב תביעה as JSON."""
+כתוב כתב תביעה מלא בעברית. הסעיפים הנדרשים:
+1. כללי — הצהרות פרוצדורליות
+2. הצדדים — פרטי {pronoun} והנתבעת
+3. רקע עובדתי — שלב כאן את העובדות הגולמיות שלמעלה
+4. היקף משרה ושכר קובע
+5. רכיבי התביעה — סעיף נפרד לכל רכיב עם חישוב
+6. סיכום
 
-    # Build system with optional cached firm patterns
-    system = SYSTEM_PROMPT
+החזר JSON בלבד."""
+
+    system = SYSTEM_PROMPT_MALE if gender == "male" else SYSTEM_PROMPT_FEMALE
+
+    # Append firm style hints if available
     if firm_patterns and firm_patterns.get("patterns"):
         style_keys = firm_patterns["patterns"]
         if style_keys.get("opening_phrases"):
-            system += f"\n\nFirm opening style examples: {json.dumps(style_keys['opening_phrases'][:3], ensure_ascii=False)}"
+            system += f"\n\nדוגמאות פתיחה של המשרד: {json.dumps(style_keys['opening_phrases'][:3], ensure_ascii=False)}"
         if style_keys.get("closing_phrases"):
-            system += f"\nFirm closing style: {json.dumps(style_keys['closing_phrases'][:2], ensure_ascii=False)}"
+            system += f"\nדוגמאות סיום: {json.dumps(style_keys['closing_phrases'][:2], ensure_ascii=False)}"
 
     logging.info(f"Calling Claude API (model={MODEL}, max_tokens={MAX_TOKENS}, timeout={API_TIMEOUT}s)...")
     logging.info(f"User prompt length: {len(user_prompt)} chars, system prompt length: {len(system)} chars")
@@ -107,43 +149,60 @@ Generate כתב תביעה as JSON."""
 
 
 def _normalize(parsed, structured_data, calculations):
-    """Normalize the parsed response to a consistent format."""
-    sections = parsed.get("sections", [])
+    """Normalize the parsed response to a consistent format.
 
-    # Handle both {"title","content"} and {"header","paragraphs"} formats
+    Converts any section format to {"header": ..., "paragraphs": [...]}.
+    Filters out English-only text artifacts.
+    """
+    sections = parsed.get("sections", [])
+    gender = structured_data.get("gender", "male")
+
     normalized_sections = []
     for s in sections:
-        if "header" in s and "paragraphs" in s:
-            normalized_sections.append(s)
-        elif "title" in s and "content" in s:
-            content = s["content"]
-            if isinstance(content, str):
-                paragraphs = [p.strip() for p in content.split("\n") if p.strip()]
-            else:
-                paragraphs = content if isinstance(content, list) else [str(content)]
-            normalized_sections.append({"header": s["title"], "paragraphs": paragraphs})
+        # Extract header and body from various formats
+        header = s.get("title") or s.get("header") or s.get("name") or ""
+        body = s.get("content") or s.get("paragraphs") or s.get("text") or ""
+
+        # Convert body to list of paragraphs
+        if isinstance(body, str):
+            paragraphs = [p.strip() for p in body.split("\n") if p.strip()]
+        elif isinstance(body, list):
+            paragraphs = [str(p).strip() for p in body if str(p).strip()]
         else:
-            # Unknown format, try to use whatever keys are there
-            header = s.get("title") or s.get("header") or s.get("name") or "סעיף"
-            body = s.get("content") or s.get("paragraphs") or s.get("text") or ""
-            if isinstance(body, str):
-                paragraphs = [p.strip() for p in body.split("\n") if p.strip()]
-            elif isinstance(body, list):
-                paragraphs = body
-            else:
-                paragraphs = [str(body)]
-            normalized_sections.append({"header": header, "paragraphs": paragraphs})
+            paragraphs = [str(body)]
+
+        # Skip sections with no Hebrew content
+        if not header and not paragraphs:
+            continue
+
+        # Filter out English-only paragraphs (JSON artifacts, template keys)
+        clean_paragraphs = []
+        for p in paragraphs:
+            # Skip if purely English/ASCII (no Hebrew chars at all)
+            if _is_english_only(p):
+                logging.warning(f"Filtered English-only paragraph: {p[:100]}")
+                continue
+            # Fix gender-neutral forms
+            p = _fix_gender(p, gender)
+            clean_paragraphs.append(p)
+
+        if header:
+            header = _fix_gender(header, gender)
+
+        if header or clean_paragraphs:
+            normalized_sections.append({"header": header, "paragraphs": clean_paragraphs})
 
     appendices_raw = parsed.get("appendices", [])
     appendices = []
     for i, a in enumerate(appendices_raw):
         if isinstance(a, str):
-            appendices.append({"number": i + 1, "description": a, "reference_text": a})
+            if not _is_english_only(a):
+                appendices.append({"number": i + 1, "description": a, "reference_text": a})
         elif isinstance(a, dict):
             appendices.append(a)
 
     return {
-        "gender_form": parsed.get("gender_form", structured_data.get("gender", "male")),
+        "gender_form": gender,
         "sections": normalized_sections,
         "appendices": appendices,
         "calculations": parsed.get("calculations", []),
@@ -154,17 +213,88 @@ def _normalize(parsed, structured_data, calculations):
     }
 
 
+def _is_english_only(text):
+    """Return True if text contains no Hebrew characters at all."""
+    # Hebrew Unicode range: \u0590-\u05FF
+    return not bool(re.search(r'[\u0590-\u05FF]', text))
+
+
+def _fix_gender(text, gender):
+    """Replace gender-neutral slashed forms with the correct gender form."""
+    if gender == "male":
+        replacements = {
+            "התובע/ת": "התובע",
+            "זכאי/ת": "זכאי",
+            "עובד/ת": "עובד",
+            "הועסק/ה": "הועסק",
+            "פוטר/ה": "פוטר",
+            "מיוצג/ת": "מיוצג",
+            "מגיש/ה": "מגיש",
+            "טוען/ת": "טוען",
+            "יבקש/תבקש": "יבקש",
+            "שכרו/ה": "שכרו",
+            "עבודתו/ה": "עבודתו",
+            "זכויותיו/ה": "זכויותיו",
+            "העסקתו/ה": "העסקתו",
+            "נאלץ/ה": "נאלץ",
+            "החל/ה": "החל",
+            "ביצע/ה": "ביצע",
+            "עבד/ה": "עבד",
+            "היה/תה": "היה",
+            "מצוין/ת": "מצוין",
+            "מקצועי/ת": "מקצועי",
+        }
+    else:
+        replacements = {
+            "התובע/ת": "התובעת",
+            "זכאי/ת": "זכאית",
+            "עובד/ת": "עובדת",
+            "הועסק/ה": "הועסקה",
+            "פוטר/ה": "פוטרה",
+            "מיוצג/ת": "מיוצגת",
+            "מגיש/ה": "מגישה",
+            "טוען/ת": "טוענת",
+            "יבקש/תבקש": "תבקש",
+            "שכרו/ה": "שכרה",
+            "עבודתו/ה": "עבודתה",
+            "זכויותיו/ה": "זכויותיה",
+            "העסקתו/ה": "העסקתה",
+            "נאלץ/ה": "נאלצה",
+            "החל/ה": "החלה",
+            "ביצע/ה": "ביצעה",
+            "עבד/ה": "עבדה",
+            "היה/תה": "היתה",
+            "מצוין/ת": "מצוינת",
+            "מקצועי/ת": "מקצועית",
+        }
+
+    for pattern, replacement in replacements.items():
+        text = text.replace(pattern, replacement)
+
+    return text
+
+
 def _wrap_raw_text(raw_text, structured_data, calculations):
-    """Wrap raw text as a single section when JSON parsing fails."""
-    paragraphs = [p.strip() for p in raw_text.split("\n") if p.strip()]
+    """Wrap raw text as sections when JSON parsing fails.
+
+    Filters out English-only lines.
+    """
+    gender = structured_data.get("gender", "male")
+    paragraphs = []
+    for p in raw_text.split("\n"):
+        p = p.strip()
+        if p and not _is_english_only(p):
+            p = _fix_gender(p, gender)
+            paragraphs.append(p)
+
     return {
-        "gender_form": structured_data.get("gender", "male"),
+        "gender_form": gender,
         "sections": [{"header": "כתב תביעה", "paragraphs": paragraphs[:100]}],
         "appendices": [],
         "calculations": [],
         "legal_citations": [],
         "summary_total": calculations.get("total", 0),
-        "verification_notes": ["הטקסט נוצר ללא עיבוד JSON — יש לבדוק ולערוך"],
+        "verification_notes": ["הטקסט נוצר ללא עיבוד מלא — יש לבדוק ולערוך"],
         "stage_timing": {"total_seconds": 0, "stages_completed": 1},
     }
 

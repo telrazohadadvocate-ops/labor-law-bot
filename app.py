@@ -1084,16 +1084,21 @@ def generate_claim_text_from_ai(ai_response, data, calculations):
     """Convert Claude's structured AI response into the flat claim text format.
 
     Takes the AI JSON response and produces a text string compatible with
-    generate_docx()'s text parsing logic.
+    generate_docx()'s text parsing logic. Filters out any English-only text.
 
     Args:
-        ai_response: Parsed JSON dict from generate_full_claim_via_claude().
+        ai_response: Parsed JSON dict from AI generation.
         data: Original form data dict.
         calculations: Results from calculate_all_claims().
 
     Returns:
         A newline-joined string of the claim text.
     """
+    import re
+
+    def _has_hebrew(text):
+        return bool(re.search(r'[\u0590-\u05FF]', text))
+
     sections = []
 
     sections.append("כ ת ב    ת ב י ע ה")
@@ -1101,21 +1106,21 @@ def generate_claim_text_from_ai(ai_response, data, calculations):
 
     for section in ai_response.get("sections", []):
         header = section.get("header", "")
-        if header:
+        if header and _has_hebrew(header):
             sections.append(header)
 
         for para in section.get("paragraphs", []):
-            if para:
-                sections.append(para)
+            if para and _has_hebrew(str(para)):
+                sections.append(str(para))
 
         sections.append("")
 
     # Render appendices from AI response
     appendices = ai_response.get("appendices", [])
     if appendices:
-        for app in appendices:
-            ref_text = app.get("reference_text", app.get("description", ""))
-            if ref_text:
+        for app_item in appendices:
+            ref_text = app_item.get("reference_text", app_item.get("description", ""))
+            if ref_text and _has_hebrew(ref_text):
                 sections.append(f"◄ {ref_text}")
         sections.append("")
 
