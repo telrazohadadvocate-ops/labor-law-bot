@@ -4,13 +4,15 @@ Two-stage AI generation pipeline for כתב תביעה documents.
 Stage 1 (Analyst): Haiku — fast analysis → sections, laws, appendices
 Stage 2 (Drafter): Haiku — full document generation with streaming
 
-All calls use Haiku for speed. Gunicorn timeout: 180s.
-API timeout: 120s. Hard timeout: 150s.
+RESILIENT: If any stage fails, returns whatever was completed.
+Logs FULL Claude responses for debugging.
 """
 
 import json
+import re
 import time
 import logging
+import traceback
 
 import anthropic
 
@@ -49,6 +51,7 @@ def _run_stage1(client, raw_input, structured_data, selected_claims):
 
 Analyze and return JSON."""
 
+    logging.info("Stage 1: Calling Claude API...")
     message = client.messages.create(
         model=MODEL,
         max_tokens=STAGE1_MAX_TOKENS,
@@ -56,9 +59,13 @@ Analyze and return JSON."""
         messages=[{"role": "user", "content": user_prompt}],
     )
     text = message.content[0].text.strip()
-    if text.startswith("```"):
-        text = _strip_markdown_fences(text)
-    return json.loads(text)
+    logging.info(f"Stage 1 RAW RESPONSE ({len(text)} chars): {text[:2000]}")
+
+    parsed = _safe_parse_json(text)
+    if parsed is None:
+        logging.error(f"Stage 1: JSON parse failed. Full response: {text}")
+        raise ValueError(f"Stage 1 JSON parse failed, response starts with: {text[:200]}")
+    return parsed
 
 
 # ── Stage 2: Drafter (streaming) ─────────────────────────────────────────────
@@ -144,6 +151,7 @@ Generate כתב תביעה. Use EXACT amounts above."""
 
     system = _build_stage2_system(firm_patterns, legal_citations)
 
+    logging.info("Stage 2: Calling Claude API with streaming...")
     collected = []
     with client.messages.stream(
         model=MODEL,
@@ -157,9 +165,108 @@ Generate כתב תביעה. Use EXACT amounts above."""
                 on_progress(sum(len(c) for c in collected))
 
     full_text = "".join(collected).strip()
-    if full_text.startswith("```"):
-        full_text = _strip_markdown_fences(full_text)
-    return json.loads(full_text)
+    logging.info(f"Stage 2 RAW RESPONSE ({len(full_text)} chars): {full_text[:3000]}")
+    if len(full_text) > 3000:
+        logging.info(f"Stage 2 RAW RESPONSE (tail): ...{full_text[-500:]}")
+
+    parsed = _safe_parse_json(full_text)
+    if parsed is None:
+        logging.error(f"Stage 2: JSON parse failed! Full response logged above.")
+        # Return the raw text as a fallback single-section document
+        raise ValueError(f"Stage 2 JSON parse failed. Response length: {len(full_text)}, starts with: {full_text[:300]}")
+    return parsed
+
+
+# ── JSON Parsing Helpers ─────────────────────────────────────────────────────
+
+def _safe_parse_json(text):
+    """Try multiple strategies to parse JSON from Claude's response.
+
+    Returns parsed dict or None if all strategies fail.
+    """
+    if not text:
+        return None
+
+    # Strategy 1: Direct parse
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Strategy 2: Strip markdown fences
+    if "```" in text:
+        stripped = _strip_markdown_fences(text)
+        if stripped:
+            try:
+                return json.loads(stripped)
+            except json.JSONDecodeError:
+                pass
+
+    # Strategy 3: Find JSON object with regex (first { to last })
+    match = re.search(r'\{', text)
+    if match:
+        # Find the matching closing brace
+        start = match.start()
+        brace_count = 0
+        end = start
+        for i in range(start, len(text)):
+            if text[i] == '{':
+                brace_count += 1
+            elif text[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    end = i + 1
+                    break
+        if end > start:
+            try:
+                return json.loads(text[start:end])
+            except json.JSONDecodeError:
+                pass
+
+    # Strategy 4: Try from first { to last }
+    first_brace = text.find('{')
+    last_brace = text.rfind('}')
+    if first_brace != -1 and last_brace > first_brace:
+        try:
+            return json.loads(text[first_brace:last_brace + 1])
+        except json.JSONDecodeError:
+            pass
+
+    logging.error(f"All JSON parse strategies failed for text ({len(text)} chars)")
+    return None
+
+
+def _build_fallback_from_text(raw_text, structured_data, calculations):
+    """Build a minimal valid response from raw text when JSON parsing fails."""
+    # Split text into paragraphs and create a simple sections structure
+    paragraphs = [p.strip() for p in raw_text.split('\n') if p.strip()]
+
+    sections = []
+    current_section = {"header": "כתב תביעה", "paragraphs": []}
+
+    for para in paragraphs:
+        # Detect headers (short lines, often bold or numbered)
+        if len(para) < 80 and not para.endswith('.') and not para.endswith('₪'):
+            if current_section["paragraphs"]:
+                sections.append(current_section)
+            current_section = {"header": para, "paragraphs": []}
+        else:
+            current_section["paragraphs"].append(para)
+
+    if current_section["paragraphs"]:
+        sections.append(current_section)
+
+    if not sections:
+        sections = [{"header": "כתב תביעה", "paragraphs": paragraphs[:50]}]
+
+    return {
+        "gender_form": structured_data.get("gender", "male"),
+        "sections": sections,
+        "appendices": [],
+        "calculations": [],
+        "legal_citations": [],
+        "summary_total": calculations.get("total", 0),
+    }
 
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
@@ -169,9 +276,13 @@ def generate_claim_multistage(raw_input, structured_data, calculations,
                               api_key=None, on_stage=None):
     """Run the 2-stage AI generation pipeline.
 
+    RESILIENT: If Stage 1 fails, skips to Stage 2 with empty analysis.
+    If Stage 2 JSON fails, tries to extract usable text.
+    Never returns None unless there's no API key or a total catastrophic failure.
+
     Returns:
         Combined dict with sections, appendices, calculations, citations,
-        summary_total. Or None on failure.
+        summary_total. Or None only on catastrophic failure.
 
     Raises:
         TimeoutError: If total elapsed time exceeds HARD_TIMEOUT.
@@ -208,17 +319,21 @@ def generate_claim_multistage(raw_input, structured_data, calculations,
     }
     selected_claims = [name for key, name in claim_keys.items() if structured_data.get(key)]
 
-    # ── Stage 1: Analyst ──
+    # ── Stage 1: Analyst (non-fatal) ──
+    stage1 = {"sections_required": [], "applicable_laws": [], "appendices_detected": [], "flags": {}}
+
     if on_stage:
         on_stage("analyzing", "מנתח עובדות...")
     logging.info("Stage 1 (Analyst) starting...")
     try:
         stage1 = _run_stage1(client, raw_input, structured_data, selected_claims)
         elapsed = time.time() - start_time
-        logging.info(f"Stage 1 completed in {elapsed:.1f}s")
+        logging.info(f"Stage 1 completed in {elapsed:.1f}s — sections: {stage1.get('sections_required', [])}")
     except Exception as e:
-        logging.error(f"Stage 1 failed: {e}")
-        return None
+        elapsed = time.time() - start_time
+        logging.error(f"Stage 1 FAILED after {elapsed:.1f}s (non-fatal, continuing with empty analysis): {e}")
+        logging.error(f"Stage 1 traceback: {traceback.format_exc()}")
+        # Continue with empty stage1 — Stage 2 can still work
 
     _check_timeout("ניתוח")
 
@@ -231,6 +346,9 @@ def generate_claim_multistage(raw_input, structured_data, calculations,
         if on_stage and chars % 500 < 50:
             on_stage("drafting_progress", f"מנסח... ({chars} תווים)")
 
+    stage2 = None
+    stage2_raw_text = None
+
     try:
         stage2 = _run_stage2_streaming(
             client, raw_input, structured_data, calculations,
@@ -239,12 +357,32 @@ def generate_claim_multistage(raw_input, structured_data, calculations,
         )
         elapsed = time.time() - start_time
         logging.info(f"Stage 2 completed in {elapsed:.1f}s: {len(stage2.get('sections', []))} sections")
-    except json.JSONDecodeError as e:
-        logging.error(f"Stage 2 JSON parse failed: {e}")
-        return None
+    except ValueError as e:
+        # JSON parse failed but we might have raw text
+        elapsed = time.time() - start_time
+        logging.error(f"Stage 2 JSON PARSE FAILED after {elapsed:.1f}s: {e}")
+        logging.error(f"Stage 2 traceback: {traceback.format_exc()}")
+        # Try to build fallback from whatever text we got
+        error_msg = str(e)
+        # The raw text was already logged in _run_stage2_streaming
     except Exception as e:
-        logging.error(f"Stage 2 failed: {e}")
-        return None
+        elapsed = time.time() - start_time
+        logging.error(f"Stage 2 FAILED after {elapsed:.1f}s: {e}")
+        logging.error(f"Stage 2 traceback: {traceback.format_exc()}")
+
+    # If Stage 2 failed completely, try a simpler single-call fallback
+    if stage2 is None:
+        logging.warning("Stage 2 produced no result. Attempting simple fallback call...")
+        if on_stage:
+            on_stage("drafting", "ניסיון נוסף...")
+        try:
+            stage2 = _run_simple_fallback(client, raw_input, structured_data, calculations, selected_claims)
+            elapsed = time.time() - start_time
+            logging.info(f"Fallback completed in {elapsed:.1f}s")
+        except Exception as e2:
+            logging.error(f"Fallback ALSO FAILED: {e2}")
+            logging.error(f"Fallback traceback: {traceback.format_exc()}")
+            return None
 
     total_elapsed = time.time() - start_time
     logging.info(f"Pipeline completed in {total_elapsed:.1f}s total")
@@ -265,6 +403,44 @@ def generate_claim_multistage(raw_input, structured_data, calculations,
             "stages_completed": 2,
         },
     }
+
+
+def _run_simple_fallback(client, raw_input, structured_data, calculations, selected_claims):
+    """Ultra-simple single-call fallback if Stage 2 fails.
+
+    Uses a much shorter prompt and lower max_tokens to maximize chance of success.
+    """
+    gender = structured_data.get("gender", "male")
+    gender_he = "התובעת" if gender == "female" else "התובע"
+
+    calc_lines = []
+    for key, claim in calculations.get("claims", {}).items():
+        calc_lines.append(f"{claim['name']}: {claim['amount']:,.0f} ₪")
+
+    prompt = f"""Write a כתב תביעה in Hebrew for {gender_he}.
+Claims: {', '.join(selected_claims)}
+Amounts: {'; '.join(calc_lines)}
+Total: {calculations.get('total', 0):,.0f} ₪
+Facts: {raw_input[:2000]}
+
+Return JSON: {{"gender_form":"{gender}","sections":[{{"header":"...","paragraphs":["..."]}}],"appendices":[],"calculations":[],"legal_citations":[],"summary_total":{calculations.get('total', 0)}}}"""
+
+    logging.info("Fallback: Calling Claude API (simple, max_tokens=3000)...")
+    message = client.messages.create(
+        model=MODEL,
+        max_tokens=3000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = message.content[0].text.strip()
+    logging.info(f"Fallback RAW RESPONSE ({len(text)} chars): {text[:2000]}")
+
+    parsed = _safe_parse_json(text)
+    if parsed is not None:
+        return parsed
+
+    # Last resort: wrap the raw text as a single section
+    logging.warning("Fallback JSON also failed — wrapping raw text as single section")
+    return _build_fallback_from_text(text, structured_data, calculations)
 
 
 def _strip_markdown_fences(text):
