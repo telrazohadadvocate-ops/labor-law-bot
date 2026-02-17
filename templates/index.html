@@ -564,6 +564,10 @@
                     <input type="checkbox" id="claim_severance" checked>
                     <label for="claim_severance">פיצויי פיטורים</label>
                 </div>
+                <div class="checkbox-item" onclick="toggleCheck(this)">
+                    <input type="checkbox" id="claim_prior_notice">
+                    <label for="claim_prior_notice">חלף הודעה מוקדמת</label>
+                </div>
                 <div class="checkbox-item checked" onclick="toggleCheck(this)">
                     <input type="checkbox" id="claim_unpaid_salary">
                     <label for="claim_unpaid_salary">שכר שלא שולם</label>
@@ -623,6 +627,14 @@
                     <label>סכום פיצויים שנצבר בקופה (₪)</label>
                     <input type="number" id="severance_deposited" value="0" placeholder="0">
                 </div>
+            </div>
+        </div>
+
+        <div class="card" id="detail_prior_notice" style="display:none">
+            <h2>חלף הודעה מוקדמת</h2>
+            <div class="info-box">
+                חלף הודעה מוקדמת מחושב אוטומטית לפי חוק הודעה מוקדמת לפיטורין ולהתפטרות, תשס"א-2001:
+                חודשים 1-6: יום לכל חודש עבודה | חודשים 7-12: 6 ימים + 2.5 ימים לכל חודש מעבר ל-6 | שנה 2+: 30 ימים (חודש מלא).
             </div>
         </div>
 
@@ -858,6 +870,48 @@
                 </table>
             </div>
 
+            <!-- AI Preview Panel (only shown for AI mode) -->
+            <div class="card" id="ai-preview-panel" style="display:none; border: 2px solid var(--accent); background: #fffdf5;">
+                <h2 style="color: var(--primary); border-bottom-color: var(--accent);">תצוגה מקדימה — AI</h2>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                    <!-- Sections list -->
+                    <div>
+                        <h3 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.5rem;">סעיפים שנוצרו</h3>
+                        <ul id="preview-sections" style="list-style: none; padding: 0; font-size: 0.85rem;"></ul>
+                    </div>
+                    <!-- Appendices -->
+                    <div>
+                        <h3 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.5rem;">נספחים</h3>
+                        <ul id="preview-appendices" style="list-style: none; padding: 0; font-size: 0.85rem;"></ul>
+                    </div>
+                </div>
+
+                <!-- Claims table with formulas -->
+                <h3 style="color: var(--primary); font-size: 1rem; margin: 1rem 0 0.5rem;">חישובים ונוסחאות</h3>
+                <table class="results-table" style="font-size: 0.85rem;">
+                    <thead>
+                        <tr>
+                            <th>רכיב</th>
+                            <th>נוסחה</th>
+                            <th>סכום (₪)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="preview-claims-tbody"></tbody>
+                </table>
+
+                <div id="preview-total" style="text-align: center; font-weight: bold; font-size: 1.1rem; color: var(--primary); margin-top: 0.5rem;"></div>
+
+                <!-- Verification notes -->
+                <div id="preview-verification" style="display:none; margin-top: 1rem; padding: 0.7rem; background: #f0f5ff; border-radius: 6px; font-size: 0.8rem;">
+                    <strong>הערות אימות:</strong>
+                    <ul id="preview-verification-list" style="margin: 0.3rem 0 0; padding-right: 1.2rem;"></ul>
+                </div>
+
+                <!-- Timing -->
+                <div id="preview-timing" style="text-align: left; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;"></div>
+            </div>
+
             <div class="card">
                 <div style="display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.5rem;">
                     <h2 style="margin: 0;">כתב התביעה</h2>
@@ -924,6 +978,7 @@
     function showRelevantDetails() {
         const claimMap = {
             'claim_severance': 'detail_severance',
+            'claim_prior_notice': 'detail_prior_notice',
             'claim_unpaid_salary': 'detail_unpaid_salary',
             'claim_overtime': 'detail_overtime',
             'claim_pension': 'detail_pension',
@@ -951,7 +1006,7 @@
             'start_date', 'end_date', 'job_title', 'termination_type',
             'work_days_per_week', 'hours_per_day',
             'base_salary', 'commissions', 'work_schedule',
-            'claim_severance', 'claim_unpaid_salary', 'claim_overtime',
+            'claim_severance', 'claim_prior_notice', 'claim_unpaid_salary', 'claim_overtime',
             'claim_pension', 'claim_vacation', 'claim_holidays',
             'claim_recuperation', 'claim_salary_delay', 'claim_emotional',
             'claim_deductions', 'claim_documents',
@@ -1055,6 +1110,7 @@
 
             // Show mode badge (template mode)
             showModeBadge('template');
+            showPreviewPanel(null);  // Hide AI preview for template mode
 
             lastAiResponse = null;
 
@@ -1071,8 +1127,6 @@
     async function generateClaimAI() {
         const data = collectData();
         const rawFacts = document.getElementById('raw_facts_input').value;
-        console.log('[AI-DEBUG] rawFacts length:', rawFacts.length);
-        console.log('[AI-DEBUG] rawFacts preview:', rawFacts.substring(0, 200));
 
         // Frontend validation
         const errors = [];
@@ -1100,9 +1154,6 @@
 
         data.raw_text = rawFacts;
         lastData = data;
-        console.log('[AI-DEBUG] data.raw_text set, length:', data.raw_text.length);
-        console.log('[AI-DEBUG] data keys:', Object.keys(data));
-        console.log('[AI-DEBUG] sending request body size:', JSON.stringify(data).length);
 
         try {
             const resp = await fetch('/generate-ai', {
@@ -1125,10 +1176,6 @@
                 goToStep(4);
                 return;
             }
-
-            console.log('[AI-DEBUG] response mode:', result.mode);
-            console.log('[AI-DEBUG] ai_response present:', !!result.ai_response);
-            console.log('[AI-DEBUG] claim_text length:', result.claim_text ? result.claim_text.length : 0);
 
             lastResult = result;
             lastAiResponse = result.ai_response;
@@ -1158,8 +1205,13 @@
             // Display claim text
             document.getElementById('claim-text-preview').textContent = result.claim_text;
 
-            // Show mode badge
+            // Show mode badge and preview panel
             showModeBadge(result.mode);
+            if (result.mode === 'ai' && result.preview) {
+                showPreviewPanel(result.preview);
+            } else {
+                showPreviewPanel(null);
+            }
 
             document.getElementById('loading').classList.remove('active');
             document.getElementById('loading-text').textContent = 'מחשב ומייצר את כתב התביעה...';
@@ -1187,6 +1239,77 @@
             badge.style.display = 'inline-block';
         } else {
             badge.style.display = 'none';
+        }
+    }
+
+    function showPreviewPanel(preview) {
+        const panel = document.getElementById('ai-preview-panel');
+        if (!preview) {
+            panel.style.display = 'none';
+            return;
+        }
+        panel.style.display = 'block';
+
+        // Sections list
+        const sectionsUl = document.getElementById('preview-sections');
+        sectionsUl.innerHTML = '';
+        (preview.sections || []).forEach((s, i) => {
+            const li = document.createElement('li');
+            li.textContent = `${i + 1}. ${s}`;
+            li.style.padding = '0.15rem 0';
+            sectionsUl.appendChild(li);
+        });
+
+        // Appendices
+        const appUl = document.getElementById('preview-appendices');
+        appUl.innerHTML = '';
+        if (preview.appendices && preview.appendices.length > 0) {
+            preview.appendices.forEach((a, i) => {
+                const li = document.createElement('li');
+                li.textContent = `◄ ${a}`;
+                li.style.padding = '0.15rem 0';
+                appUl.appendChild(li);
+            });
+        } else {
+            appUl.innerHTML = '<li style="color: var(--text-muted);">לא זוהו נספחים</li>';
+        }
+
+        // Claims table with formulas
+        const tbody = document.getElementById('preview-claims-tbody');
+        tbody.innerHTML = '';
+        (preview.claims || []).forEach(c => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${c.name}</td><td style="font-size:0.8rem;direction:rtl">${c.formula || '-'}</td><td>${c.amount.toLocaleString()} ₪</td>`;
+            tbody.appendChild(tr);
+        });
+        const totalTr = document.createElement('tr');
+        totalTr.className = 'total-row';
+        totalTr.innerHTML = `<td>סה"כ</td><td></td><td>${(preview.total || 0).toLocaleString()} ₪</td>`;
+        tbody.appendChild(totalTr);
+
+        document.getElementById('preview-total').textContent =
+            `סה"כ סכום התביעה: ${(preview.total || 0).toLocaleString()} ₪`;
+
+        // Verification notes
+        const verDiv = document.getElementById('preview-verification');
+        const verList = document.getElementById('preview-verification-list');
+        if (preview.verification_notes && preview.verification_notes.length > 0) {
+            verDiv.style.display = 'block';
+            verList.innerHTML = '';
+            preview.verification_notes.forEach(n => {
+                const li = document.createElement('li');
+                li.textContent = n;
+                verList.appendChild(li);
+            });
+        } else {
+            verDiv.style.display = 'none';
+        }
+
+        // Timing
+        const timing = preview.stage_timing || {};
+        if (timing.total_seconds) {
+            document.getElementById('preview-timing').textContent =
+                `${timing.stages_completed || '?'} שלבים הושלמו ב-${timing.total_seconds} שניות`;
         }
     }
 

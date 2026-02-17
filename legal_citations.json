@@ -1,0 +1,174 @@
+{
+  "statutes": [
+    {
+      "id": "severance",
+      "hebrew_name": "חוק פיצויי פיטורים, תשכ\"ג-1963",
+      "key_sections": [
+        {"section": "סעיף 1", "description": "הזכאות לפיצויי פיטורים"},
+        {"section": "סעיף 11(א)", "description": "שיעור הפיצויים – שכר חודש לכל שנת עבודה"},
+        {"section": "סעיף 12", "description": "שכר עבודה לצורך חישוב פיצויים"},
+        {"section": "סעיף 14", "description": "הסדר לפי סעיף 14 – תשלומים לקופת גמל"},
+        {"section": "סעיף 20", "description": "התיישנות – שנה מיום הפסקת יחסי עבודה"}
+      ],
+      "claim_types": ["severance"]
+    },
+    {
+      "id": "prior_notice",
+      "hebrew_name": "חוק הודעה מוקדמת לפיטורין ולהתפטרות, תשס\"א-2001",
+      "key_sections": [
+        {"section": "סעיף 2", "description": "חובת הודעה מוקדמת לפיטורים"},
+        {"section": "סעיף 3", "description": "חובת הודעה מוקדמת להתפטרות"},
+        {"section": "סעיף 4", "description": "מועד ההודעה – עובד במשכורת"},
+        {"section": "סעיף 5", "description": "מועד ההודעה – עובד בשכר"},
+        {"section": "סעיף 7", "description": "חלף הודעה מוקדמת"}
+      ],
+      "claim_types": ["prior_notice"]
+    },
+    {
+      "id": "annual_vacation",
+      "hebrew_name": "חוק חופשה שנתית, תשי\"א-1951",
+      "key_sections": [
+        {"section": "סעיף 3", "description": "אורך החופשה"},
+        {"section": "סעיף 10", "description": "פדיון חופשה"},
+        {"section": "סעיף 13", "description": "דמי חופשה"},
+        {"section": "סעיף 31", "description": "התיישנות – 3 שנים"}
+      ],
+      "claim_types": ["vacation"]
+    },
+    {
+      "id": "wage_protection",
+      "hebrew_name": "חוק הגנת השכר, תשי\"ח-1958",
+      "key_sections": [
+        {"section": "סעיף 17", "description": "מועד תשלום השכר"},
+        {"section": "סעיף 17א", "description": "תוספת הלנה"},
+        {"section": "סעיף 25", "description": "איסור ניכויים משכר עבודה"},
+        {"section": "סעיף 25א", "description": "ניכויים מותרים"},
+        {"section": "סעיף 26", "description": "חובת מסירת תלוש שכר"}
+      ],
+      "claim_types": ["salary_delay", "deductions", "unpaid_salary"]
+    },
+    {
+      "id": "work_hours",
+      "hebrew_name": "חוק שעות עבודה ומנוחה, תשי\"א-1951",
+      "key_sections": [
+        {"section": "סעיף 1", "description": "הגדרת שעות עבודה – 8 שעות ביום, 42/43 בשבוע"},
+        {"section": "סעיף 6", "description": "תוספת גמול שעות נוספות"},
+        {"section": "סעיף 16", "description": "שיעור הגמול – 25% לשעתיים ראשונות, 50% מעבר"},
+        {"section": "סעיף 26ב", "description": "נטל ההוכחה על המעסיק"}
+      ],
+      "claim_types": ["overtime"]
+    },
+    {
+      "id": "employee_notice",
+      "hebrew_name": "חוק הודעה לעובד ולמועמד לעבודה (תנאי עבודה והליכי מיון וקבלה לעבודה), תשס\"ב-2002",
+      "key_sections": [
+        {"section": "סעיף 1", "description": "חובת מסירת הודעה על תנאי עבודה"},
+        {"section": "סעיף 5", "description": "הודעה על שינוי תנאי עבודה"},
+        {"section": "סעיף 5א", "description": "פיצוי בגין הפרה"}
+      ],
+      "claim_types": ["documents"]
+    },
+    {
+      "id": "sexual_harassment",
+      "hebrew_name": "חוק למניעת הטרדה מינית, תשנ\"ח-1998",
+      "key_sections": [
+        {"section": "סעיף 3", "description": "הגדרת הטרדה מינית"},
+        {"section": "סעיף 6", "description": "פיצויים ללא הוכחת נזק"},
+        {"section": "סעיף 7", "description": "חובת המעסיק"},
+        {"section": "סעיף 8", "description": "הגנה על מתלונן"}
+      ],
+      "claim_types": ["harassment"]
+    },
+    {
+      "id": "workplace_harassment",
+      "hebrew_name": "חוק למניעת התעמרות בעבודה, תשפ\"ה-2025",
+      "key_sections": [
+        {"section": "סעיף 2", "description": "הגדרת התעמרות בעבודה"},
+        {"section": "סעיף 4", "description": "איסור התעמרות"},
+        {"section": "סעיף 8", "description": "פיצויים"}
+      ],
+      "claim_types": ["emotional", "harassment"]
+    },
+    {
+      "id": "mandatory_pension",
+      "hebrew_name": "צו הרחבה לביטוח פנסיוני מקיף במשק (פנסיה חובה)",
+      "key_sections": [
+        {"section": "סעיף 6", "description": "שיעורי הפרשות – תגמולי מעסיק 6.5%, עובד 6%"},
+        {"section": "סעיף 7", "description": "הפרשות לפיצויים 6% מינימום (8.33% מלא)"},
+        {"section": "סעיף 9", "description": "בסיס השכר להפרשות – שכר מלא"}
+      ],
+      "claim_types": ["pension"]
+    }
+  ],
+  "case_law": [
+    {
+      "citation": "ע\"ע (ארצי) 1352/02 אברהם נ' מדינת ישראל",
+      "topic": "severance",
+      "principle": "זכות לפיצויי פיטורים מכוח סעיף 11(א) לחוק"
+    },
+    {
+      "citation": "ע\"ע (ארצי) 300162/96 חברת בתי מלון נ' אלקסלסי",
+      "topic": "overtime",
+      "principle": "נטל הוכחה על המעסיק לעניין שעות עבודה"
+    },
+    {
+      "citation": "דב\"ע (ארצי) נד/3-23 פלסטין פוסט נ' יואב ג'קלין",
+      "topic": "wrongful_termination",
+      "principle": "חובת שימוע לפני פיטורים"
+    },
+    {
+      "citation": "ע\"ע (ארצי) 1027/01 ד\"ר גוטליב נ' המכללה האקדמית",
+      "topic": "wrongful_termination",
+      "principle": "פיצוי בגין פיטורים שלא כדין – עד 12 משכורות"
+    },
+    {
+      "citation": "ע\"ע (ארצי) 164/99 דן פרומר נ' רדגארד",
+      "topic": "wrongful_termination",
+      "principle": "חובת שימוע – זכות טיעון אמיתית ולא פורמלית"
+    },
+    {
+      "citation": "ע\"ע (ארצי) 1496/02 אשל הירדן נ' הרשקוביץ",
+      "topic": "recuperation",
+      "principle": "חובת תשלום דמי הבראה לכל עובד"
+    },
+    {
+      "citation": "ע\"ע (ארצי) 44824-03-16 אוריאל ברד נ' קנסטו",
+      "topic": "overtime",
+      "principle": "נטל הוכחה מוגבר על המעסיק שלא ניהל רישום שעות"
+    },
+    {
+      "citation": "ע\"ע (ארצי) 48726-12-17 רותם נ' פלאפון תקשורת",
+      "topic": "pension",
+      "principle": "חובת הפרשה מיום הראשון לעבודה לאחר 6 חודשים"
+    }
+  ],
+  "expansion_orders": [
+    {
+      "name": "צו הרחבה בדבר השתתפות המעסיק בהוצאות הבראה ונופש",
+      "current_rates": {
+        "day_value": 418.18,
+        "year": 2024,
+        "entitlement_by_year": "שנה 1: 5 ימים, שנים 2-3: 6 ימים, שנים 4-10: 7 ימים, שנים 11-15: 8 ימים, שנים 16-19: 9 ימים, שנה 20+: 10 ימים"
+      },
+      "claim_types": ["recuperation"]
+    },
+    {
+      "name": "צו הרחבה לביטוח פנסיוני מקיף במשק (2008, 2011, 2016)",
+      "current_rates": {
+        "employer_pension": "6.5%",
+        "employee_pension": "6%",
+        "employer_severance": "6% מינימום (8.33% מלא)",
+        "effective_date": "2017-01-01"
+      },
+      "claim_types": ["pension"]
+    },
+    {
+      "name": "צו הרחבה – הסכם מסגרת 2000 (דמי חגים)",
+      "current_rates": {
+        "holidays_per_year": 9,
+        "eligibility": "אחרי 3 חודשי עבודה"
+      },
+      "claim_types": ["holidays"]
+    }
+  ]
+}
