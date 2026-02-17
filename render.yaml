@@ -7,3 +7,9 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.0"
+      - key: ANTHROPIC_API_KEY
+        sync: false  # required — set manually in Render dashboard
+      - key: APP_PASSWORD
+        sync: false  # login password — set manually in Render dashboard
+      - key: SECRET_KEY
+        sync: false  # Flask session secret — set manually in Render dashboard
