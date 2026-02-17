@@ -1817,11 +1817,18 @@ def generate_docx(data, calculations, claim_text, ai_section_headers=None):
     else:
         section_headers = base_section_headers
 
+    import re as _re
+    def _line_has_hebrew(t):
+        return bool(_re.search(r'[\u0590-\u05FF]', t))
+
     lines = claim_text.split("\n")
     in_summary = False
     for line in lines:
         stripped = line.strip()
         if not stripped:
+            continue
+        # Skip lines with no Hebrew (English artifacts, JSON keys, separators)
+        if not _line_has_hebrew(stripped):
             continue
         elif stripped == "כ ת ב    ת ב י ע ה":
             continue
@@ -2066,11 +2073,12 @@ def generate_ai_route():
                 "preview": preview,
             })
 
-        # AI failed — fall back to template mode but include the raw text
+        # AI failed — fall back to template mode with raw facts as narrative
         logging.warning("AI generation returned None — falling back to template mode")
-        claim_text = generate_claim_text(data, calculations)
-        # Prepend raw facts so they're not lost
-        claim_text = f"עובדות גולמיות שהוזנו:\n{raw_text}\n\n{'='*60}\n\n{claim_text}"
+        fallback_data = dict(data)
+        if raw_text and not fallback_data.get("narrative", "").strip():
+            fallback_data["narrative"] = raw_text
+        claim_text = generate_claim_text(fallback_data, calculations)
         return jsonify({
             "success": True,
             "mode": "template_fallback",
@@ -2081,11 +2089,13 @@ def generate_ai_route():
     except Exception as e:
         logging.error(f"AI generation route error: {e}")
         logging.error(traceback.format_exc())
-        # Last resort: template mode
+        # Last resort: template mode with raw facts as narrative
         try:
-            calculations = calculate_all_claims(data)
-            claim_text = generate_claim_text(data, calculations)
-            claim_text = f"עובדות גולמיות שהוזנו:\n{raw_text}\n\n{'='*60}\n\n{claim_text}"
+            fallback_data = dict(data)
+            if raw_text and not fallback_data.get("narrative", "").strip():
+                fallback_data["narrative"] = raw_text
+            calculations = calculate_all_claims(fallback_data)
+            claim_text = generate_claim_text(fallback_data, calculations)
             return jsonify({
                 "success": True,
                 "mode": "template_fallback",
