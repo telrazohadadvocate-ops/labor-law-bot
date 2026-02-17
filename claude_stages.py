@@ -1,11 +1,17 @@
 """
 Multi-stage AI generation pipeline for כתב תביעה documents.
 
-Stage 1 (Analyst): Analyzes raw facts → identifies sections, laws, appendices
-Stage 2 (Drafter): Generates full document sections using firm patterns + citations
-Stage 3 (Verifier): Validates calculations and section completeness
+Stage 1 (Analyst): Haiku — fast analysis of facts → sections, laws, appendices
+Stage 2 (Drafter): Sonnet — full document generation with streaming
+Stage 3 (Verifier): Haiku — quick validation of amounts and completeness
 
-Each stage has independent error handling. Stage 3 is non-fatal.
+Optimizations:
+- Stage 1 & 3 use Haiku (10x faster, cheaper)
+- Stage 2 uses streaming so progress is visible
+- Prompt caching: static content (firm patterns + citations) in a single
+  cached system block at the top
+- 60s hard timeout with clear Hebrew error
+- max_tokens capped at 4000 for Stage 2
 """
 
 import json
@@ -14,7 +20,12 @@ import logging
 
 import anthropic
 
-# ── Stage 1: Analyst ──────────────────────────────────────────────────────────
+# ── Models ────────────────────────────────────────────────────────────────────
+
+MODEL_FAST = "claude-haiku-4-5-20251001"   # Stages 1 & 3
+MODEL_DRAFT = "claude-sonnet-4-5-20250929"  # Stage 2 (quality matters)
+
+# ── Stage 1: Analyst (Haiku — fast) ──────────────────────────────────────────
 
 STAGE1_SYSTEM = """You are a legal analyst specializing in Israeli labor law.
 Analyze the provided case facts and structured data. Identify:
@@ -43,7 +54,7 @@ STAGE1_MAX_TOKENS = 1500
 
 
 def _run_stage1(client, raw_input, structured_data, selected_claims):
-    """Stage 1: Analyze facts and determine document structure."""
+    """Stage 1: Analyze facts and determine document structure (Haiku)."""
     user_prompt = f"""נתוני התיק המובנים:
 {json.dumps(structured_data, ensure_ascii=False, indent=2)}
 
@@ -55,7 +66,7 @@ def _run_stage1(client, raw_input, structured_data, selected_claims):
 Analyze the above case and return the JSON analysis."""
 
     message = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
+        model=MODEL_FAST,
         max_tokens=STAGE1_MAX_TOKENS,
         system=STAGE1_SYSTEM,
         messages=[{"role": "user", "content": user_prompt}],
@@ -66,17 +77,12 @@ Analyze the above case and return the JSON analysis."""
     return json.loads(text)
 
 
-# ── Stage 2: Drafter ──────────────────────────────────────────────────────────
+# ── Stage 2: Drafter (Sonnet — quality + streaming) ──────────────────────────
 
-STAGE2_MAX_TOKENS = 6000
+STAGE2_MAX_TOKENS = 4000
 
-
-def _build_stage2_system(firm_patterns, legal_citations):
-    """Build Stage 2 system prompt with firm patterns and legal citations.
-
-    Uses cache_control for prompt caching on the large reference blocks.
-    """
-    base = """You are an Israeli labor law attorney drafting a complete כתב תביעה for בית הדין לעבודה.
+# The base instructions (always present, cached)
+_STAGE2_BASE = """You are an Israeli labor law attorney drafting a complete כתב תביעה for בית הדין לעבודה.
 
 Write each section with formal legal Hebrew, third person, proper clause structure.
 Reference specific law sections where applicable.
@@ -108,38 +114,52 @@ Return JSON with this structure:
   "summary_total": 123456
 }"""
 
-    system_parts = [{"type": "text", "text": base}]
+
+def _build_stage2_system(firm_patterns, legal_citations):
+    """Build Stage 2 system prompt with prompt caching.
+
+    All static reference data is combined into a SINGLE large cached block
+    placed first in the system prompt, so subsequent calls get cache hits.
+    """
+    # Combine all static reference material into one block for caching
+    static_parts = [_STAGE2_BASE]
 
     if firm_patterns and firm_patterns.get("patterns"):
-        patterns_text = "\n\n## Firm Writing Patterns (FOLLOW THIS STYLE):\n" + json.dumps(
-            firm_patterns["patterns"], ensure_ascii=False, indent=2
+        static_parts.append(
+            "\n\n## Firm Writing Patterns (FOLLOW THIS STYLE):\n"
+            + json.dumps(firm_patterns["patterns"], ensure_ascii=False, indent=2)
         )
-        system_parts.append({
-            "type": "text",
-            "text": patterns_text,
-            "cache_control": {"type": "ephemeral"},
-        })
 
     if legal_citations:
-        citations_text = "\n\n## Legal Citations Reference:\n" + json.dumps(
-            legal_citations, ensure_ascii=False, indent=2
+        static_parts.append(
+            "\n\n## Legal Citations Reference:\n"
+            + json.dumps(legal_citations, ensure_ascii=False, indent=2)
         )
-        system_parts.append({
+
+    # Single cached block with all static content
+    return [
+        {
             "type": "text",
-            "text": citations_text,
+            "text": "\n".join(static_parts),
             "cache_control": {"type": "ephemeral"},
-        })
+        }
+    ]
 
-    return system_parts
 
+def _run_stage2_streaming(client, raw_input, structured_data, calculations,
+                          stage1_analysis, firm_patterns, legal_citations,
+                          on_progress=None):
+    """Stage 2: Generate full document sections with streaming.
 
-def _run_stage2(client, raw_input, structured_data, calculations, stage1_analysis,
-                firm_patterns, legal_citations):
-    """Stage 2: Generate full document sections."""
+    Args:
+        on_progress: Optional callback(chars_so_far) called as tokens stream in.
+
+    Returns:
+        Parsed JSON dict from the complete response.
+    """
     gender = structured_data.get("gender", "male")
     gender_label = "זכר" if gender == "male" else "נקבה"
 
-    # Build calculation summary for the prompt
     calc_summary = []
     for key, claim in calculations.get("claims", {}).items():
         entry = f"- {claim['name']}: {claim['amount']:,.0f} ₪"
@@ -177,19 +197,26 @@ Generate the full כתב תביעה sections. Use the EXACT amounts from the cal
 
     system = _build_stage2_system(firm_patterns, legal_citations)
 
-    message = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
+    # Stream the response
+    collected = []
+    with client.messages.stream(
+        model=MODEL_DRAFT,
         max_tokens=STAGE2_MAX_TOKENS,
         system=system,
         messages=[{"role": "user", "content": user_prompt}],
-    )
-    text = message.content[0].text.strip()
-    if text.startswith("```"):
-        text = _strip_markdown_fences(text)
-    return json.loads(text)
+    ) as stream:
+        for text in stream.text_stream:
+            collected.append(text)
+            if on_progress:
+                on_progress(sum(len(c) for c in collected))
+
+    full_text = "".join(collected).strip()
+    if full_text.startswith("```"):
+        full_text = _strip_markdown_fences(full_text)
+    return json.loads(full_text)
 
 
-# ── Stage 3: Verifier ────────────────────────────────────────────────────────
+# ── Stage 3: Verifier (Haiku — fast) ─────────────────────────────────────────
 
 STAGE3_SYSTEM = """You are a quality reviewer for Israeli labor court claim documents.
 Review the drafted sections against the authoritative calculations.
@@ -214,7 +241,7 @@ STAGE3_MAX_TOKENS = 800
 
 
 def _run_stage3(client, stage2_output, calculations, selected_claims):
-    """Stage 3: Verify and correct the drafted sections."""
+    """Stage 3: Verify and correct the drafted sections (Haiku)."""
     calc_amounts = {}
     for key, claim in calculations.get("claims", {}).items():
         calc_amounts[claim["name"]] = claim["amount"]
@@ -232,7 +259,7 @@ def _run_stage3(client, stage2_output, calculations, selected_claims):
 Verify the sections and return corrections if needed."""
 
     message = client.messages.create(
-        model="claude-sonnet-4-5-20250929",
+        model=MODEL_FAST,
         max_tokens=STAGE3_MAX_TOKENS,
         system=STAGE3_SYSTEM,
         messages=[{"role": "user", "content": user_prompt}],
@@ -245,14 +272,13 @@ Verify the sections and return corrections if needed."""
 
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
-# Total budget: 120s (Render timeout) minus some safety margin
-TOTAL_TIMEOUT = 110  # seconds
-STAGE3_MIN_REMAINING = 20  # skip Stage 3 if less than this many seconds remain
+HARD_TIMEOUT = 60  # seconds — clear error if exceeded
+STAGE3_MIN_REMAINING = 12  # skip Stage 3 if less than this many seconds remain
 
 
 def generate_claim_multistage(raw_input, structured_data, calculations,
                               firm_patterns=None, legal_citations=None,
-                              api_key=None):
+                              api_key=None, on_stage=None):
     """Run the 3-stage AI generation pipeline.
 
     Args:
@@ -262,19 +288,31 @@ def generate_claim_multistage(raw_input, structured_data, calculations,
         firm_patterns: Loaded firm_patterns.json dict (or None).
         legal_citations: Loaded legal_citations.json dict (or None).
         api_key: Anthropic API key.
+        on_stage: Optional callback(stage_name, detail) for progress reporting.
 
     Returns:
         Combined dict with sections, appendices, calculations, citations,
         summary_total, verification_notes. Or None on failure.
+
+    Raises:
+        TimeoutError: If total elapsed time exceeds HARD_TIMEOUT.
     """
     if not api_key:
         logging.warning("generate_claim_multistage: no API key")
         return None
 
-    client = anthropic.Anthropic(api_key=api_key, timeout=90.0)
+    client = anthropic.Anthropic(api_key=api_key, timeout=55.0)
     start_time = time.time()
 
-    # Collect selected claims for prompts
+    def _check_timeout(stage_name):
+        elapsed = time.time() - start_time
+        if elapsed > HARD_TIMEOUT:
+            raise TimeoutError(
+                f"חריגה ממגבלת הזמן ({HARD_TIMEOUT} שניות) בשלב {stage_name}. "
+                "נסו שוב או השתמשו בתבנית."
+            )
+
+    # Collect selected claims
     claim_keys = {
         "claim_severance": "פיצויי פיטורים",
         "claim_prior_notice": "חלף הודעה מוקדמת",
@@ -291,34 +329,55 @@ def generate_claim_multistage(raw_input, structured_data, calculations,
     }
     selected_claims = [name for key, name in claim_keys.items() if structured_data.get(key)]
 
-    # ── Stage 1: Analyst ──
-    logging.info("Stage 1 (Analyst) starting...")
+    # ── Stage 1: Analyst (Haiku) ──
+    if on_stage:
+        on_stage("analyzing", "מנתח עובדות...")
+    logging.info("Stage 1 (Analyst/Haiku) starting...")
     try:
         stage1 = _run_stage1(client, raw_input, structured_data, selected_claims)
         elapsed = time.time() - start_time
-        logging.info(f"Stage 1 completed in {elapsed:.1f}s: {len(stage1.get('sections_required', []))} sections identified")
+        logging.info(f"Stage 1 completed in {elapsed:.1f}s: {len(stage1.get('sections_required', []))} sections")
     except Exception as e:
         logging.error(f"Stage 1 failed: {e}")
         return None
 
-    # ── Stage 2: Drafter ──
-    logging.info("Stage 2 (Drafter) starting...")
+    _check_timeout("ניתוח")
+
+    # ── Stage 2: Drafter (Sonnet + streaming) ──
+    if on_stage:
+        on_stage("drafting", "מנסח סעיפים...")
+    logging.info("Stage 2 (Drafter/Sonnet+streaming) starting...")
+
+    def _on_stream_progress(chars):
+        if on_stage and chars % 500 < 50:  # throttle callbacks
+            on_stage("drafting_progress", f"מנסח... ({chars} תווים)")
+
     try:
-        stage2 = _run_stage2(client, raw_input, structured_data, calculations,
-                             stage1, firm_patterns, legal_citations)
+        stage2 = _run_stage2_streaming(
+            client, raw_input, structured_data, calculations,
+            stage1, firm_patterns, legal_citations,
+            on_progress=_on_stream_progress,
+        )
         elapsed = time.time() - start_time
-        logging.info(f"Stage 2 completed in {elapsed:.1f}s: {len(stage2.get('sections', []))} sections generated")
+        logging.info(f"Stage 2 completed in {elapsed:.1f}s: {len(stage2.get('sections', []))} sections")
+    except json.JSONDecodeError as e:
+        logging.error(f"Stage 2 JSON parse failed: {e}")
+        return None
     except Exception as e:
         logging.error(f"Stage 2 failed: {e}")
         return None
 
-    # ── Stage 3: Verifier (non-fatal, skipped if time is short) ──
-    remaining = TOTAL_TIMEOUT - (time.time() - start_time)
+    _check_timeout("ניסוח")
+
+    # ── Stage 3: Verifier (Haiku, non-fatal) ──
+    remaining = HARD_TIMEOUT - (time.time() - start_time)
     verification_notes = []
     final_sections = stage2.get("sections", [])
 
     if remaining >= STAGE3_MIN_REMAINING:
-        logging.info(f"Stage 3 (Verifier) starting... ({remaining:.0f}s remaining)")
+        if on_stage:
+            on_stage("verifying", "בודק ציטוטים וסכומים...")
+        logging.info(f"Stage 3 (Verifier/Haiku) starting... ({remaining:.0f}s left)")
         try:
             stage3 = _run_stage3(client, stage2, calculations, selected_claims)
             elapsed = time.time() - start_time
@@ -327,16 +386,18 @@ def generate_claim_multistage(raw_input, structured_data, calculations,
                 final_sections = stage3["verified_sections"]
             verification_notes = stage3.get("verification_notes", [])
         except Exception as e:
-            logging.warning(f"Stage 3 failed (non-fatal, using Stage 2 output): {e}")
+            logging.warning(f"Stage 3 failed (non-fatal): {e}")
             verification_notes = [f"אימות לא הושלם: {str(e)[:100]}"]
     else:
         logging.info(f"Skipping Stage 3 — only {remaining:.0f}s remaining")
         verification_notes = ["שלב האימות דולג עקב מגבלת זמן"]
 
     total_elapsed = time.time() - start_time
-    logging.info(f"Multi-stage pipeline completed in {total_elapsed:.1f}s total")
+    logging.info(f"Pipeline completed in {total_elapsed:.1f}s total")
 
-    # ── Combine results ──
+    if on_stage:
+        on_stage("done", f"הושלם ב-{total_elapsed:.0f} שניות")
+
     return {
         "gender_form": stage2.get("gender_form", structured_data.get("gender", "male")),
         "sections": final_sections,

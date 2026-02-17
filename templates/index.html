@@ -845,6 +845,27 @@
         <div class="loading" id="loading">
             <div class="spinner"></div>
             <p id="loading-text">מחשב ומייצר את כתב התביעה...</p>
+            <!-- AI Progress stages (shown only for AI generation) -->
+            <div id="ai-progress" style="display:none; max-width: 400px; margin: 1rem auto 0; text-align: right;">
+                <div style="background: var(--border); border-radius: 8px; height: 6px; overflow: hidden; margin-bottom: 0.8rem;">
+                    <div id="progress-bar" style="background: linear-gradient(90deg, var(--accent), #d4af37); height: 100%; width: 0%; border-radius: 8px; transition: width 0.5s ease;"></div>
+                </div>
+                <div id="progress-stages" style="font-size: 0.85rem; color: var(--text-muted);">
+                    <div class="progress-stage" data-stage="calculating" style="padding: 0.2rem 0;">
+                        <span class="stage-icon">⏳</span> מחשב סכומים...
+                    </div>
+                    <div class="progress-stage" data-stage="analyzing" style="padding: 0.2rem 0;">
+                        <span class="stage-icon">⏳</span> מנתח עובדות...
+                    </div>
+                    <div class="progress-stage" data-stage="drafting" style="padding: 0.2rem 0;">
+                        <span class="stage-icon">⏳</span> מנסח סעיפים...
+                    </div>
+                    <div class="progress-stage" data-stage="verifying" style="padding: 0.2rem 0;">
+                        <span class="stage-icon">⏳</span> בודק ציטוטים וסכומים...
+                    </div>
+                </div>
+                <p id="progress-timer" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; text-align: center;"></p>
+            </div>
         </div>
 
         <div id="results" style="display:none">
@@ -1124,6 +1145,75 @@
         }
     }
 
+    let _aiProgressTimer = null;
+
+    function startAiProgress() {
+        const progressEl = document.getElementById('ai-progress');
+        const bar = document.getElementById('progress-bar');
+        const timer = document.getElementById('progress-timer');
+        const stages = document.querySelectorAll('.progress-stage');
+        progressEl.style.display = 'block';
+        bar.style.width = '0%';
+        stages.forEach(s => { s.querySelector('.stage-icon').textContent = '⏳'; s.style.color = 'var(--text-muted)'; });
+
+        const startTime = Date.now();
+        const stageSchedule = [
+            { at: 0, stage: 'calculating', pct: 5 },
+            { at: 1000, stage: 'analyzing', pct: 15 },
+            { at: 4000, stage: 'drafting', pct: 30 },
+            { at: 25000, stage: 'verifying', pct: 80 },
+        ];
+        let lastStageIdx = -1;
+
+        _aiProgressTimer = setInterval(() => {
+            const elapsed = Date.now() - startTime;
+            const secs = Math.floor(elapsed / 1000);
+            timer.textContent = `${secs} שניות`;
+
+            // Advance stages based on typical timing
+            for (let i = stageSchedule.length - 1; i >= 0; i--) {
+                if (elapsed >= stageSchedule[i].at && i > lastStageIdx) {
+                    lastStageIdx = i;
+                    // Mark completed stages
+                    for (let j = 0; j < i; j++) {
+                        const el = document.querySelector(`.progress-stage[data-stage="${stageSchedule[j].stage}"]`);
+                        if (el) { el.querySelector('.stage-icon').textContent = '✓'; el.style.color = 'var(--success)'; }
+                    }
+                    // Mark current active
+                    const cur = document.querySelector(`.progress-stage[data-stage="${stageSchedule[i].stage}"]`);
+                    if (cur) { cur.querySelector('.stage-icon').textContent = '⚙️'; cur.style.color = 'var(--primary)'; cur.style.fontWeight = 'bold'; }
+                    break;
+                }
+            }
+
+            // Smooth progress bar (logarithmic approach to ~90%)
+            const targetPct = Math.min(90, 5 + 85 * (1 - Math.exp(-elapsed / 30000)));
+            bar.style.width = targetPct.toFixed(1) + '%';
+
+            // Timeout warning
+            if (secs >= 55) {
+                timer.textContent = `${secs} שניות — כמעט מסיים...`;
+                timer.style.color = 'var(--danger)';
+            }
+        }, 500);
+    }
+
+    function stopAiProgress(success) {
+        if (_aiProgressTimer) { clearInterval(_aiProgressTimer); _aiProgressTimer = null; }
+        const bar = document.getElementById('progress-bar');
+        const stages = document.querySelectorAll('.progress-stage');
+        if (success) {
+            bar.style.width = '100%';
+            stages.forEach(s => { s.querySelector('.stage-icon').textContent = '✓'; s.style.color = 'var(--success)'; s.style.fontWeight = 'normal'; });
+        }
+    }
+
+    function resetAiProgress() {
+        stopAiProgress(false);
+        document.getElementById('ai-progress').style.display = 'none';
+        document.getElementById('progress-timer').style.color = 'var(--text-muted)';
+    }
+
     async function generateClaimAI() {
         const data = collectData();
         const rawFacts = document.getElementById('raw_facts_input').value;
@@ -1149,18 +1239,24 @@
 
         goToStep(5);
         document.getElementById('loading').classList.add('active');
-        document.getElementById('loading-text').textContent = 'מייצר כתב תביעה באמצעות AI... (עשוי לקחת עד דקה)';
+        document.getElementById('loading-text').textContent = 'מייצר כתב תביעה באמצעות AI...';
         document.getElementById('results').style.display = 'none';
+        startAiProgress();
 
         data.raw_text = rawFacts;
         lastData = data;
 
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 65000);
+
             const resp = await fetch('/generate-ai', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data),
+                signal: controller.signal,
             });
+            clearTimeout(timeoutId);
 
             const contentType = resp.headers.get('content-type') || '';
             if (!contentType.includes('application/json')) {
@@ -1170,13 +1266,16 @@
             const result = await resp.json();
 
             if (!result.success) {
+                stopAiProgress(false);
                 alert('שגיאה: ' + result.error);
+                resetAiProgress();
                 document.getElementById('loading').classList.remove('active');
                 document.getElementById('loading-text').textContent = 'מחשב ומייצר את כתב התביעה...';
                 goToStep(4);
                 return;
             }
 
+            stopAiProgress(true);
             lastResult = result;
             lastAiResponse = result.ai_response;
 
@@ -1213,14 +1312,24 @@
                 showPreviewPanel(null);
             }
 
-            document.getElementById('loading').classList.remove('active');
-            document.getElementById('loading-text').textContent = 'מחשב ומייצר את כתב התביעה...';
-            document.getElementById('results').style.display = 'block';
+            // Brief delay to show completed progress before switching
+            setTimeout(() => {
+                resetAiProgress();
+                document.getElementById('loading').classList.remove('active');
+                document.getElementById('loading-text').textContent = 'מחשב ומייצר את כתב התביעה...';
+                document.getElementById('results').style.display = 'block';
+            }, 600);
 
         } catch (e) {
+            stopAiProgress(false);
+            resetAiProgress();
             document.getElementById('loading').classList.remove('active');
             document.getElementById('loading-text').textContent = 'מחשב ומייצר את כתב התביעה...';
-            alert('שגיאה בתקשורת עם השרת: ' + e.message);
+            if (e.name === 'AbortError') {
+                alert('חריגה ממגבלת הזמן (60 שניות). נסו שוב או השתמשו בתבנית.');
+            } else {
+                alert('שגיאה בתקשורת עם השרת: ' + e.message);
+            }
             goToStep(4);
         }
     }

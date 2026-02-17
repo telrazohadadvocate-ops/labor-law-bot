@@ -2027,24 +2027,28 @@ def calculate():
 
 @app.route("/generate-ai", methods=["POST"])
 def generate_ai_route():
-    """AI-powered full claim generation using SKILL.md system prompt."""
+    """AI-powered full claim generation with multi-stage pipeline.
+
+    Frontend shows animated progress stages based on typical timing.
+    Server logs actual stage transitions via on_stage callback.
+    """
     logging.info("generate-ai: request received")
     data = request.json
     raw_text = data.get("raw_text", "")
-    logging.info(f"generate-ai: raw_text present={'yes' if raw_text else 'NO'}, length={len(raw_text) if raw_text else 0}")
-    logging.info(f"generate-ai: raw_text preview={repr(raw_text[:200]) if raw_text else 'EMPTY'}")
-    logging.info(f"generate-ai: request keys={list(data.keys()) if data else 'NO DATA'}")
 
     if not raw_text or not raw_text.strip():
-        logging.warning("generate-ai: raw_text is empty or whitespace-only, returning 400")
         return jsonify({"success": False, "error": "יש להזין עובדות גולמיות לטקסט"}), 400
 
     try:
-        # Calculate claims using existing logic (authoritative amounts)
         calculations = calculate_all_claims(data)
         logging.info("generate-ai: calculations done, calling multi-stage pipeline...")
 
-        # Generate via multi-stage Claude AI pipeline
+        stage_log = []
+
+        def on_stage(stage_name, detail):
+            stage_log.append({"stage": stage_name, "message": detail})
+            logging.info(f"generate-ai stage: {stage_name} — {detail}")
+
         ai_response = generate_claim_multistage(
             raw_input=raw_text,
             structured_data=data,
@@ -2052,20 +2056,16 @@ def generate_ai_route():
             firm_patterns=_FIRM_PATTERNS,
             legal_citations=_LEGAL_CITATIONS,
             api_key=ANTHROPIC_API_KEY,
+            on_stage=on_stage,
         )
-        logging.info(f"generate-ai: pipeline returned, ai_response is {'present' if ai_response else 'None'}")
 
         if ai_response is None:
-            logging.warning("generate-ai: multi-stage pipeline returned None — AI generation failed")
             return jsonify({
                 "success": False,
                 "error": "שירות ה-AI אינו זמין כרגע. ניתן לנסות שוב מאוחר יותר, או להשתמש בכפתור 'חשב וצור כתב תביעה (תבנית)' ליצירה ללא AI.",
             }), 503
 
-        # Generate claim text from AI response for preview
         claim_text = generate_claim_text_from_ai(ai_response, data, calculations)
-
-        # Build preview object for the frontend panel
         preview = _build_preview(ai_response, calculations)
 
         return jsonify({
@@ -2075,7 +2075,11 @@ def generate_ai_route():
             "claim_text": claim_text,
             "ai_response": ai_response,
             "preview": preview,
+            "stage_log": stage_log,
         })
+    except TimeoutError as e:
+        logging.error(f"AI generation timeout: {e}")
+        return jsonify({"success": False, "error": str(e)}), 504
     except Exception as e:
         logging.error(f"AI generation route error: {e}")
         return jsonify({"success": False, "error": str(e)}), 400
