@@ -1574,11 +1574,16 @@ def generate_docx(data, calculations, claim_text=None, ai_plain_sections=None):
     if hdr_tblPr is None:
         hdr_tblPr = etree.SubElement(hdr_el, qn('w:tblPr'))
 
-    # bidiVisual BEFORE tblW — makes cell[0] the RIGHT side
-    etree.SubElement(hdr_tblPr, qn('w:bidiVisual'))
+    # Remove any existing bidiVisual and tblW, then add in correct order
+    for tag in [qn('w:bidiVisual'), qn('w:tblW')]:
+        for existing in hdr_tblPr.findall(tag):
+            hdr_tblPr.remove(existing)
+    hdr_bidi = etree.SubElement(hdr_tblPr, qn('w:bidiVisual'))
+    hdr_tblPr.insert(0, hdr_bidi)
     hdr_tblW = etree.SubElement(hdr_tblPr, qn('w:tblW'))
     hdr_tblW.set(qn('w:type'), 'dxa')
     hdr_tblW.set(qn('w:w'), '9026')
+    hdr_tblPr.insert(1, hdr_tblW)
     _make_table_borderless(hdr_tbl)
 
     hdr_grid = hdr_el.find(qn('w:tblGrid'))

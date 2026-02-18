@@ -152,7 +152,10 @@ def generate_claim_docx(form_data: dict, ai_text: str, output_path: str):
     # Step 6: Gender replacements
     _apply_gender_to_doc(doc, gender)
 
-    # Step 7: Save
+    # Step 7: Final Hebrew proofing pass — ensure every run has rtl + lang
+    _ensure_hebrew_proofing(doc)
+
+    # Step 8: Save
     doc.save(output_path)
     logging.info(f"docx_generator_v2: saved to {output_path}")
 
@@ -201,6 +204,13 @@ def _setup_styles(doc):
     if szCs is None:
         szCs = etree.SubElement(rPr, qn("w:szCs"))
     szCs.set(qn("w:val"), str(FONT_SIZE_HALF_POINTS))
+    # RTL and language on style
+    if rPr.find(qn("w:rtl")) is None:
+        etree.SubElement(rPr, qn("w:rtl"))
+    lang = rPr.find(qn("w:lang"))
+    if lang is None:
+        lang = etree.SubElement(rPr, qn("w:lang"))
+    lang.set(qn("w:bidi"), "he-IL")
 
     pf = style.paragraph_format
     pf.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
@@ -264,30 +274,45 @@ def _setup_numbering(doc):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _set_rtl_bidi(p):
+    """Set bidi on paragraph pPr."""
     pPr = p._element.get_or_add_pPr()
     if pPr.find(qn("w:bidi")) is None:
         etree.SubElement(pPr, qn("w:bidi"))
 
 
 def _set_run_font(run, size=12, bold=False, underline=False):
+    """Configure run with David font, RTL, bidi language, complex-script sizes."""
     run.font.name = FONT_NAME
     run.font.size = Pt(size)
     run.font.bold = bold
     run.font.underline = underline
     run.font.rtl = True
     rPr = run._element.get_or_add_rPr()
+    # rFonts with cs
     rFonts = rPr.find(qn("w:rFonts"))
     if rFonts is None:
         rFonts = etree.SubElement(rPr, qn("w:rFonts"))
+    rFonts.set(qn("w:ascii"), FONT_NAME)
+    rFonts.set(qn("w:hAnsi"), FONT_NAME)
     rFonts.set(qn("w:cs"), FONT_NAME)
     rFonts.set(qn("w:eastAsia"), FONT_NAME)
+    # bCs for bold complex script
     if bold:
         if rPr.find(qn("w:bCs")) is None:
             etree.SubElement(rPr, qn("w:bCs"))
+    # szCs
     szCs = rPr.find(qn("w:szCs"))
     if szCs is None:
         szCs = etree.SubElement(rPr, qn("w:szCs"))
     szCs.set(qn("w:val"), str(size * 2))
+    # w:rtl
+    if rPr.find(qn("w:rtl")) is None:
+        etree.SubElement(rPr, qn("w:rtl"))
+    # w:lang bidi="he-IL"
+    lang = rPr.find(qn("w:lang"))
+    if lang is None:
+        lang = etree.SubElement(rPr, qn("w:lang"))
+    lang.set(qn("w:bidi"), "he-IL")
 
 
 def _set_spacing(p):
@@ -397,6 +422,50 @@ def _add_title(doc, text):
 # TABLE HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _setup_table_bidi(table, width=TABLE_WIDTH):
+    """Rebuild tblPr to ensure bidiVisual is BEFORE tblW.
+
+    python-docx may create a default tblW. We remove it and rebuild
+    the correct order: bidiVisual, then tblW.
+    """
+    tblEl = table._element
+    tblPr = tblEl.find(qn("w:tblPr"))
+    if tblPr is None:
+        tblPr = etree.SubElement(tblEl, qn("w:tblPr"))
+        tblEl.insert(0, tblPr)
+
+    # Remove any existing bidiVisual and tblW
+    for tag in ["w:bidiVisual", "w:tblW"]:
+        for existing in tblPr.findall(qn(tag)):
+            tblPr.remove(existing)
+
+    # Insert bidiVisual at position 0
+    bidi = etree.SubElement(tblPr, qn("w:bidiVisual"))
+    tblPr.insert(0, bidi)
+
+    # Insert tblW right after bidiVisual
+    tblW = etree.SubElement(tblPr, qn("w:tblW"))
+    tblW.set(qn("w:type"), "dxa")
+    tblW.set(qn("w:w"), str(width))
+    tblPr.insert(1, tblW)
+
+    return tblPr
+
+
+def _setup_table_grid(table, col_widths):
+    """Set up table grid columns, removing any defaults."""
+    tblEl = table._element
+    tblGrid = tblEl.find(qn("w:tblGrid"))
+    if tblGrid is None:
+        tblGrid = etree.SubElement(tblEl, qn("w:tblGrid"))
+    else:
+        for gc in tblGrid.findall(qn("w:gridCol")):
+            tblGrid.remove(gc)
+    for w in col_widths:
+        gc = etree.SubElement(tblGrid, qn("w:gridCol"))
+        gc.set(qn("w:w"), str(w))
+
+
 def _set_cell_rtl(cell, text, bold=False, size=12, alignment=WD_ALIGN_PARAGRAPH.RIGHT):
     cell.text = ""
     p = cell.paragraphs[0]
@@ -473,21 +542,21 @@ def _shade_cell(cell, fill_color, font_color=None):
             color.set(qn("w:val"), font_color)
 
 
-def _make_table_borderless(table):
-    tbl = table._element
-    tblPr = tbl.find(qn("w:tblPr"))
-    if tblPr is None:
-        tblPr = etree.SubElement(tbl, qn("w:tblPr"))
+def _add_table_borders(tblPr, style="single"):
+    """Add visible borders to a table."""
+    # Remove existing borders first
     for existing in tblPr.findall(qn("w:tblBorders")):
         tblPr.remove(existing)
     tblBorders = etree.SubElement(tblPr, qn("w:tblBorders"))
+    val = style if style != "none" else "none"
+    sz = "4" if style != "none" else "0"
+    color = "000000" if style != "none" else "auto"
     for bn in ["top", "left", "bottom", "right", "insideH", "insideV"]:
         b = etree.SubElement(tblBorders, qn(f"w:{bn}"))
-        b.set(qn("w:val"), "none")
-        b.set(qn("w:sz"), "0")
+        b.set(qn("w:val"), val)
+        b.set(qn("w:sz"), sz)
         b.set(qn("w:space"), "0")
-        b.set(qn("w:color"), "auto")
-    return tblPr
+        b.set(qn("w:color"), color)
 
 
 def _set_cell_valign(cell, val="bottom"):
@@ -504,37 +573,10 @@ def _add_summary_table(doc, claims_dict, total_amount):
     num_rows = len(claims_dict) + 2  # header + data + total
     tbl = doc.add_table(rows=num_rows, cols=2)
 
-    tblEl = tbl._element
-    tblPr = tblEl.find(qn("w:tblPr"))
-    if tblPr is None:
-        tblPr = etree.SubElement(tblEl, qn("w:tblPr"))
-
-    # bidiVisual BEFORE tblW
-    etree.SubElement(tblPr, qn("w:bidiVisual"))
-    tblW = etree.SubElement(tblPr, qn("w:tblW"))
-    tblW.set(qn("w:type"), "dxa")
-    tblW.set(qn("w:w"), str(TABLE_WIDTH))
-
-    # Grid columns
-    tblGrid = tblEl.find(qn("w:tblGrid"))
-    if tblGrid is None:
-        tblGrid = etree.SubElement(tblEl, qn("w:tblGrid"))
-    else:
-        for gc in tblGrid.findall(qn("w:gridCol")):
-            tblGrid.remove(gc)
-    gc1 = etree.SubElement(tblGrid, qn("w:gridCol"))
-    gc1.set(qn("w:w"), str(SUMMARY_COL_RIGHT))
-    gc2 = etree.SubElement(tblGrid, qn("w:gridCol"))
-    gc2.set(qn("w:w"), str(SUMMARY_COL_LEFT))
-
-    # Borders
-    tblBorders = etree.SubElement(tblPr, qn("w:tblBorders"))
-    for bn in ["top", "left", "bottom", "right", "insideH", "insideV"]:
-        b = etree.SubElement(tblBorders, qn(f"w:{bn}"))
-        b.set(qn("w:val"), "single")
-        b.set(qn("w:sz"), "4")
-        b.set(qn("w:space"), "0")
-        b.set(qn("w:color"), "000000")
+    # Setup bidiVisual BEFORE tblW
+    tblPr = _setup_table_bidi(tbl)
+    _setup_table_grid(tbl, [SUMMARY_COL_RIGHT, SUMMARY_COL_LEFT])
+    _add_table_borders(tblPr, "single")
 
     # Header row
     _set_cell_rtl(tbl.rows[0].cells[0], "רכיב תביעה", bold=True,
@@ -588,29 +630,18 @@ def _build_cover_page(doc, form_data, claims, total):
     firm_fax = form_data.get("firm_fax", "")
     firm_email = form_data.get("firm_email", "")
 
-    # ── Header table (court name + case number) ──
+    # ══════════════════════════════════════════════════════════════════════
+    # HEADER TABLE: 2 columns with bidiVisual
+    # With bidiVisual: cells[0] = RIGHT side, cells[1] = LEFT side
+    # RIGHT = סע"ש / בפני
+    # LEFT  = court name
+    # ══════════════════════════════════════════════════════════════════════
     hdr_tbl = doc.add_table(rows=1, cols=2)
-    hdr_el = hdr_tbl._element
-    hdr_tblPr = hdr_el.find(qn("w:tblPr"))
-    if hdr_tblPr is None:
-        hdr_tblPr = etree.SubElement(hdr_el, qn("w:tblPr"))
-    etree.SubElement(hdr_tblPr, qn("w:bidiVisual"))
-    hdr_tblW = etree.SubElement(hdr_tblPr, qn("w:tblW"))
-    hdr_tblW.set(qn("w:type"), "dxa")
-    hdr_tblW.set(qn("w:w"), str(TABLE_WIDTH))
-    _make_table_borderless(hdr_tbl)
+    tblPr = _setup_table_bidi(hdr_tbl)
+    _setup_table_grid(hdr_tbl, [4513, 4513])
+    _add_table_borders(tblPr, "none")
 
-    hdr_grid = hdr_el.find(qn("w:tblGrid"))
-    if hdr_grid is None:
-        hdr_grid = etree.SubElement(hdr_el, qn("w:tblGrid"))
-    else:
-        for gc in hdr_grid.findall(qn("w:gridCol")):
-            hdr_grid.remove(gc)
-    for w in ["4513", "4513"]:
-        gc = etree.SubElement(hdr_grid, qn("w:gridCol"))
-        gc.set(qn("w:w"), w)
-
-    # Split court name
+    # Split court name into base + location
     court_base = court_name
     court_location = ""
     if " ב" in court_name:
@@ -619,47 +650,32 @@ def _build_cover_page(doc, form_data, claims, total):
             court_base = parts[0]
             court_location = "ב" + parts[1]
 
+    # cells[0] = RIGHT side: סע"ש and בפני
     _set_cell_multiline(hdr_tbl.rows[0].cells[0], [
         ('סע"ש ________', False, 11, WD_ALIGN_PARAGRAPH.RIGHT),
         ("בפני _________", False, 11, WD_ALIGN_PARAGRAPH.RIGHT),
     ])
+
+    # cells[1] = LEFT side: court name
     court_lines = [(court_base, True, 12, WD_ALIGN_PARAGRAPH.LEFT)]
     if court_location:
         court_lines.append((court_location, True, 12, WD_ALIGN_PARAGRAPH.LEFT))
     _set_cell_multiline(hdr_tbl.rows[0].cells[1], court_lines)
 
-    # ── Parties table ──
+    # ══════════════════════════════════════════════════════════════════════
+    # PARTIES TABLE: 2 columns with bidiVisual
+    # cells[0] = RIGHT (content), cells[1] = LEFT (label)
+    # ══════════════════════════════════════════════════════════════════════
     parties_tbl = doc.add_table(rows=5, cols=2)
-    pt_el = parties_tbl._element
-    pt_tblPr = pt_el.find(qn("w:tblPr"))
-    if pt_tblPr is None:
-        pt_tblPr = etree.SubElement(pt_el, qn("w:tblPr"))
-    etree.SubElement(pt_tblPr, qn("w:bidiVisual"))
-    pt_tblW = etree.SubElement(pt_tblPr, qn("w:tblW"))
-    pt_tblW.set(qn("w:type"), "dxa")
-    pt_tblW.set(qn("w:w"), str(TABLE_WIDTH))
-    pt_borders = etree.SubElement(pt_tblPr, qn("w:tblBorders"))
-    for bn in ["top", "left", "bottom", "right", "insideH", "insideV"]:
-        b = etree.SubElement(pt_borders, qn(f"w:{bn}"))
-        b.set(qn("w:val"), "single")
-        b.set(qn("w:sz"), "4")
-        b.set(qn("w:space"), "0")
-        b.set(qn("w:color"), "000000")
-    pt_grid = pt_el.find(qn("w:tblGrid"))
-    if pt_grid is None:
-        pt_grid = etree.SubElement(pt_el, qn("w:tblGrid"))
-    else:
-        for gc in pt_grid.findall(qn("w:gridCol")):
-            pt_grid.remove(gc)
-    for w in ["7026", "2000"]:
-        gc = etree.SubElement(pt_grid, qn("w:gridCol"))
-        gc.set(qn("w:w"), w)
+    pt_tblPr = _setup_table_bidi(parties_tbl)
+    _setup_table_grid(parties_tbl, [7026, 2000])
+    _add_table_borders(pt_tblPr, "single")
 
     # Row 0: "בעניין:"
     _set_cell_rtl(parties_tbl.rows[0].cells[0], "בעניין:", bold=True)
     _set_cell_rtl(parties_tbl.rows[0].cells[1], "")
 
-    # Row 1: Plaintiff
+    # Row 1: Plaintiff details (cells[0] RIGHT) | label (cells[1] LEFT)
     plaintiff_lines = []
     name_id = f"{plaintiff_name}, ת.ז. {plaintiff_id}" if plaintiff_id else plaintiff_name
     plaintiff_lines.append((name_id, True, 12, WD_ALIGN_PARAGRAPH.RIGHT))
@@ -733,42 +749,14 @@ def _add_signature_block(doc, form_data):
     _add_plain_para(doc, "")
 
     sig_table = doc.add_table(rows=1, cols=2)
-    sig_tbl_el = sig_table._element
-    sig_tblPr = sig_tbl_el.find(qn("w:tblPr"))
-    if sig_tblPr is None:
-        sig_tblPr = etree.SubElement(sig_tbl_el, qn("w:tblPr"))
+    sig_tblPr = _setup_table_bidi(sig_table)
+    _setup_table_grid(sig_table, [SIG_COL_SPACER, SIG_COL_SIG])
+    _add_table_borders(sig_tblPr, "none")
 
-    # bidiVisual BEFORE tblW
-    etree.SubElement(sig_tblPr, qn("w:bidiVisual"))
-    sig_tblW = etree.SubElement(sig_tblPr, qn("w:tblW"))
-    sig_tblW.set(qn("w:type"), "dxa")
-    sig_tblW.set(qn("w:w"), str(TABLE_WIDTH))
-
-    # Borderless
-    sig_borders = etree.SubElement(sig_tblPr, qn("w:tblBorders"))
-    for bn in ["top", "left", "bottom", "right", "insideH", "insideV"]:
-        b = etree.SubElement(sig_borders, qn(f"w:{bn}"))
-        b.set(qn("w:val"), "none")
-        b.set(qn("w:sz"), "0")
-        b.set(qn("w:space"), "0")
-        b.set(qn("w:color"), "auto")
-
-    # Grid: spacer + signature
-    sig_grid = sig_tbl_el.find(qn("w:tblGrid"))
-    if sig_grid is None:
-        sig_grid = etree.SubElement(sig_tbl_el, qn("w:tblGrid"))
-    else:
-        for gc in sig_grid.findall(qn("w:gridCol")):
-            sig_grid.remove(gc)
-    gc1 = etree.SubElement(sig_grid, qn("w:gridCol"))
-    gc1.set(qn("w:w"), str(SIG_COL_SPACER))
-    gc2 = etree.SubElement(sig_grid, qn("w:gridCol"))
-    gc2.set(qn("w:w"), str(SIG_COL_SIG))
-
-    # Empty spacer
+    # Empty spacer (cells[0] = right side with bidiVisual)
     _set_cell_rtl(sig_table.rows[0].cells[0], "")
 
-    # Signature cell
+    # Signature cell (cells[1] = left side)
     sig_cell = sig_table.rows[0].cells[1]
     if attorney_name and attorney_id:
         sig_text = f'{attorney_name}, עו"ד\nמ.ר. {attorney_id}\nב"כ {pronoun}'
@@ -842,7 +830,6 @@ def _apply_gender_to_doc(doc, gender):
         for run in para.runs:
             if run.text:
                 run.text = fix_gender(run.text, gender)
-    # Also fix inside table cells
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
@@ -850,3 +837,51 @@ def _apply_gender_to_doc(doc, gender):
                     for run in para.runs:
                         if run.text:
                             run.text = fix_gender(run.text, gender)
+
+
+def _ensure_hebrew_proofing(doc):
+    """Final pass: ensure EVERY run in the document has w:rtl, w:rFonts cs=David, w:lang bidi=he-IL.
+    Also ensure every paragraph has w:bidi in pPr."""
+
+    def _proof_paragraph(p_element):
+        pPr = p_element.find(qn("w:pPr"))
+        if pPr is None:
+            pPr = etree.SubElement(p_element, qn("w:pPr"))
+            p_element.insert(0, pPr)
+        if pPr.find(qn("w:bidi")) is None:
+            etree.SubElement(pPr, qn("w:bidi"))
+
+    def _proof_run(r_element):
+        rPr = r_element.find(qn("w:rPr"))
+        if rPr is None:
+            rPr = etree.SubElement(r_element, qn("w:rPr"))
+            r_element.insert(0, rPr)
+        # w:rtl
+        if rPr.find(qn("w:rtl")) is None:
+            etree.SubElement(rPr, qn("w:rtl"))
+        # w:rFonts cs=David
+        rFonts = rPr.find(qn("w:rFonts"))
+        if rFonts is None:
+            rFonts = etree.SubElement(rPr, qn("w:rFonts"))
+        if not rFonts.get(qn("w:cs")):
+            rFonts.set(qn("w:cs"), FONT_NAME)
+        # w:lang bidi=he-IL
+        lang = rPr.find(qn("w:lang"))
+        if lang is None:
+            lang = etree.SubElement(rPr, qn("w:lang"))
+        if not lang.get(qn("w:bidi")):
+            lang.set(qn("w:bidi"), "he-IL")
+
+    # Process all paragraphs in document body
+    body = doc.element.body
+    for p in body.iter(qn("w:p")):
+        _proof_paragraph(p)
+        for r in p.iter(qn("w:r")):
+            _proof_run(r)
+
+    # Process all tables (including nested)
+    for tbl in body.iter(qn("w:tbl")):
+        for p in tbl.iter(qn("w:p")):
+            _proof_paragraph(p)
+            for r in p.iter(qn("w:r")):
+                _proof_run(r)
