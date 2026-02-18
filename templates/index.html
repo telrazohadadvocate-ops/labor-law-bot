@@ -524,7 +524,7 @@
                      onclick="document.getElementById('file-input').click()">
                     <div class="icon">📄</div>
                     <strong>גררו קבצים לכאן או לחצו לבחירה</strong>
-                    <p>תמונות (JPG, PNG) או PDF — עד 5 קבצים</p>
+                    <p>תמונות (JPG, PNG) או PDF — עד 50 קבצים</p>
                 </div>
                 <input type="file" id="file-input" multiple accept="image/*,.pdf" style="display:none"
                        onchange="handleFiles(this.files)">
@@ -1170,7 +1170,7 @@
     }
 
     function handleFiles(fileListObj) {
-        const MAX_FILES = 5;
+        const MAX_FILES = 50;
         const newFiles = Array.from(fileListObj);
         if (uploadedFiles.length + newFiles.length > MAX_FILES) {
             alert('ניתן להעלות עד ' + MAX_FILES + ' קבצים');

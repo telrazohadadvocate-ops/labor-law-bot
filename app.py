@@ -2099,7 +2099,7 @@ def extract_documents():
 
     # Build content blocks for Claude Vision
     content = []
-    for f in files[:5]:  # max 5 files
+    for f in files[:50]:  # max 50 files
         media_type = f.get("type", "image/jpeg")
         b64data = f.get("data", "")
         if not b64data:
