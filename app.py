@@ -2085,6 +2085,37 @@ def generate_ai_route():
             return jsonify({"success": False, "error": str(e)}), 500
 
 
+def _resize_image_b64(b64data, media_type, max_px=1500, jpeg_quality=85):
+    """Resize a base64-encoded image so its longest side is at most max_px pixels.
+
+    Returns (new_b64, new_media_type). Converts all images to JPEG for compression.
+    """
+    import base64
+    from PIL import Image
+
+    raw = base64.b64decode(b64data)
+    img = Image.open(io.BytesIO(raw))
+
+    # Convert RGBA/P to RGB for JPEG output
+    if img.mode in ("RGBA", "P", "LA"):
+        img = img.convert("RGB")
+
+    # Resize if needed
+    w, h = img.size
+    longest = max(w, h)
+    if longest > max_px:
+        scale = max_px / longest
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+        img = img.resize((new_w, new_h), Image.LANCZOS)
+        logging.info(f"  Resized image {w}x{h} -> {new_w}x{new_h}")
+
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=jpeg_quality, optimize=True)
+    new_b64 = base64.b64encode(buf.getvalue()).decode()
+    return new_b64, "image/jpeg"
+
+
 @app.route("/extract-documents", methods=["POST"])
 def extract_documents():
     """Receive uploaded document images, send to Claude Vision, return extracted data."""
@@ -2111,6 +2142,11 @@ def extract_documents():
                 "source": {"type": "base64", "media_type": media_type, "data": b64data},
             })
         else:
+            # Resize images to avoid Claude's dimension limits for multi-image requests
+            try:
+                b64data, media_type = _resize_image_b64(b64data, media_type)
+            except Exception as e:
+                logging.warning(f"Image resize failed for {f.get('name', '?')}: {e}")
             content.append({
                 "type": "image",
                 "source": {"type": "base64", "media_type": media_type, "data": b64data},
