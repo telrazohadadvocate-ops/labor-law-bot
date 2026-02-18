@@ -2085,6 +2085,88 @@ def generate_ai_route():
             return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/extract-documents", methods=["POST"])
+def extract_documents():
+    """Receive uploaded document images, send to Claude Vision, return extracted data."""
+    data = request.json
+    files = data.get("files", [])
+    if not files:
+        return jsonify({"success": False, "error": "לא התקבלו קבצים"}), 400
+
+    client = _get_claude_client()
+    if client is None:
+        return jsonify({"success": False, "error": "שירות AI אינו זמין — מפתח API חסר"}), 500
+
+    # Build content blocks for Claude Vision
+    content = []
+    for f in files[:5]:  # max 5 files
+        media_type = f.get("type", "image/jpeg")
+        b64data = f.get("data", "")
+        if not b64data:
+            continue
+        # PDF files are sent as document type
+        if media_type == "application/pdf":
+            content.append({
+                "type": "document",
+                "source": {"type": "base64", "media_type": media_type, "data": b64data},
+            })
+        else:
+            content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": b64data},
+            })
+
+    extraction_prompt = (
+        "נתח את המסמכים המצורפים (תלושי שכר, מכתבי פיטורים, חוזי עבודה וכו׳) "
+        "וחלץ את הנתונים הבאים בפורמט JSON בלבד, ללא טקסט נוסף.\n"
+        "אם שדה לא נמצא, השאר מחרוזת ריקה.\n"
+        "תאריכים בפורמט YYYY-MM-DD.\n\n"
+        "{\n"
+        '  "employee_name": "שם העובד/ת",\n'
+        '  "id_number": "מספר ת.ז.",\n'
+        '  "employer_name": "שם המעסיק/חברה",\n'
+        '  "employer_id": "ח.פ. או ע.מ.",\n'
+        '  "start_date": "YYYY-MM-DD",\n'
+        '  "end_date": "YYYY-MM-DD",\n'
+        '  "monthly_salary": 0,\n'
+        '  "job_title": "תפקיד",\n'
+        '  "address": "כתובת מגורים",\n'
+        '  "key_facts": ["עובדה 1", "עובדה 2"]\n'
+        "}"
+    )
+    content.append({"type": "text", "text": extraction_prompt})
+
+    try:
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2000,
+            system="אתה עוזר משפטי שמחלץ נתוני העסקה ממסמכים. החזר JSON בלבד.",
+            messages=[{"role": "user", "content": content}],
+        )
+        raw_text = message.content[0].text.strip()
+        logging.info(f"extract-documents: raw response length={len(raw_text)}")
+
+        # Parse JSON from response (handle possible markdown code blocks)
+        json_text = raw_text
+        if "```" in json_text:
+            # Extract JSON from code block
+            start = json_text.find("{")
+            end = json_text.rfind("}") + 1
+            if start >= 0 and end > start:
+                json_text = json_text[start:end]
+
+        extracted = json.loads(json_text)
+        return jsonify({"success": True, "extracted": extracted})
+
+    except json.JSONDecodeError as e:
+        logging.error(f"extract-documents: JSON parse error: {e}\nRaw: {raw_text[:500]}")
+        return jsonify({"success": False, "error": "לא ניתן לפרסר את תוצאות הניתוח"}), 500
+    except Exception as e:
+        logging.error(f"extract-documents error: {e}")
+        logging.error(traceback.format_exc())
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/generate-docx", methods=["POST"])
 def generate_docx_route():
     data = request.json

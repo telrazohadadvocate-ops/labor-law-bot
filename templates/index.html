@@ -383,6 +383,113 @@
             transition: background 0.2s, transform 0.1s;
         }
         #install-btn:hover { background: #d4b05c; transform: scale(1.03); }
+
+        /* Step 0 — Landing / Upload */
+        .step0-buttons {
+            display: flex;
+            gap: 1.5rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+        .step0-btn {
+            padding: 1.2rem 2.5rem;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            cursor: pointer;
+            font-family: inherit;
+            border: 2px solid transparent;
+            transition: all 0.25s;
+            min-width: 260px;
+            text-align: center;
+        }
+        .step0-btn-gold {
+            background: linear-gradient(135deg, var(--accent), #d4af37);
+            color: var(--primary);
+        }
+        .step0-btn-gold:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(198,160,74,0.4); }
+        .step0-btn-outline {
+            background: var(--card);
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+        .step0-btn-outline:hover { background: var(--primary); color: white; }
+
+        .upload-zone {
+            border: 2.5px dashed var(--accent);
+            border-radius: 12px;
+            padding: 2.5rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.25s;
+            background: #fffdf5;
+            margin-top: 1rem;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: var(--primary);
+            background: #ebf4ff;
+        }
+        .upload-zone .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+        .upload-zone p { color: var(--text-muted); margin-top: 0.3rem; font-size: 0.9rem; }
+
+        .file-list {
+            list-style: none;
+            margin-top: 1rem;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        .file-list li {
+            background: var(--bg);
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .file-list li .remove-file {
+            cursor: pointer;
+            color: var(--danger);
+            font-weight: bold;
+        }
+
+        .extraction-results {
+            margin-top: 1.5rem;
+        }
+        .extraction-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.8rem;
+            margin-top: 1rem;
+        }
+        .extraction-field label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 0.2rem;
+        }
+        .extraction-field input {
+            width: 100%;
+            padding: 0.5rem 0.7rem;
+            border: 1.5px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.9rem;
+            direction: rtl;
+            font-family: inherit;
+        }
+        .extraction-field input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .extraction-field.full-width { grid-column: 1 / -1; }
+
+        @media (max-width: 768px) {
+            .step0-buttons { flex-direction: column; align-items: center; }
+            .step0-btn { min-width: 220px; }
+            .extraction-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -395,9 +502,101 @@
 
 <div class="container">
 
+    <!-- Step 0: Landing — Upload or Manual -->
+    <div class="section-panel active" id="step0">
+        <div class="card" style="text-align: center;">
+            <h2 style="border-bottom: none; text-align: center;">כיצד תרצו להתחיל?</h2>
+            <p style="color: var(--text-muted); margin-bottom: 1.5rem;">
+                תוכלו להעלות מסמכים (תלושי שכר, מכתב פיטורים וכד׳) למילוי אוטומטי, או למלא את הטופס ידנית.
+            </p>
+            <div class="step0-buttons">
+                <button class="step0-btn step0-btn-gold" onclick="showUploadArea()">
+                    העלאת מסמכי לקוח — מילוי אוטומטי
+                </button>
+                <button class="step0-btn step0-btn-outline" onclick="skipToManual()">
+                    מילוי ידני
+                </button>
+            </div>
+
+            <!-- Upload area (hidden initially) -->
+            <div id="upload-area" style="display:none; margin-top: 1.5rem; text-align: right;">
+                <div class="upload-zone" id="upload-zone"
+                     onclick="document.getElementById('file-input').click()">
+                    <div class="icon">📄</div>
+                    <strong>גררו קבצים לכאן או לחצו לבחירה</strong>
+                    <p>תמונות (JPG, PNG) או PDF — עד 5 קבצים</p>
+                </div>
+                <input type="file" id="file-input" multiple accept="image/*,.pdf" style="display:none"
+                       onchange="handleFiles(this.files)">
+                <ul class="file-list" id="file-list"></ul>
+
+                <div class="btn-row" id="analyze-btn-row" style="display:none;">
+                    <button class="btn btn-accent" onclick="analyzeDocuments()">שלח לניתוח</button>
+                </div>
+
+                <div class="loading" id="upload-loading">
+                    <div class="spinner"></div>
+                    <p>מנתח מסמכים...</p>
+                </div>
+
+                <!-- Extraction results (hidden initially) -->
+                <div class="extraction-results" id="extraction-results" style="display:none;">
+                    <h3 style="color: var(--primary); margin-bottom: 0.3rem;">נתונים שחולצו מהמסמכים</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted);">ניתן לערוך לפני המשך.</p>
+                    <div class="extraction-grid">
+                        <div class="extraction-field">
+                            <label>שם העובד/ת</label>
+                            <input type="text" id="ext_employee_name">
+                        </div>
+                        <div class="extraction-field">
+                            <label>ת.ז.</label>
+                            <input type="text" id="ext_id_number">
+                        </div>
+                        <div class="extraction-field">
+                            <label>שם המעסיק</label>
+                            <input type="text" id="ext_employer_name">
+                        </div>
+                        <div class="extraction-field">
+                            <label>ח.פ. / ע.מ. מעסיק</label>
+                            <input type="text" id="ext_employer_id">
+                        </div>
+                        <div class="extraction-field">
+                            <label>תאריך תחילת עבודה</label>
+                            <input type="date" id="ext_start_date">
+                        </div>
+                        <div class="extraction-field">
+                            <label>תאריך סיום עבודה</label>
+                            <input type="date" id="ext_end_date">
+                        </div>
+                        <div class="extraction-field">
+                            <label>שכר חודשי ברוטו (₪)</label>
+                            <input type="number" id="ext_monthly_salary">
+                        </div>
+                        <div class="extraction-field">
+                            <label>תפקיד</label>
+                            <input type="text" id="ext_job_title">
+                        </div>
+                        <div class="extraction-field full-width">
+                            <label>כתובת מגורים</label>
+                            <input type="text" id="ext_address">
+                        </div>
+                        <div class="extraction-field full-width">
+                            <label>עובדות מרכזיות</label>
+                            <textarea id="ext_key_facts" rows="3" style="width:100%; padding:0.5rem 0.7rem; border:1.5px solid var(--border); border-radius:6px; font-size:0.9rem; direction:rtl; font-family:inherit; resize:vertical;"></textarea>
+                        </div>
+                    </div>
+                    <div class="btn-row">
+                        <button class="btn btn-success" onclick="confirmExtraction()">אשר והמשך</button>
+                        <button class="btn btn-outline" onclick="skipToManual()">דלג ומלא ידנית</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Stepper -->
-    <div class="stepper">
-        <div class="step active" onclick="goToStep(1)" data-step="1">
+    <div class="stepper" id="main-stepper" style="display:none;">
+        <div class="step" onclick="goToStep(1)" data-step="1">
             <span class="step-number">1</span>
             <span>פרטי הצדדים</span>
         </div>
@@ -420,7 +619,7 @@
     </div>
 
     <!-- Step 1: Parties -->
-    <div class="section-panel active" id="step1">
+    <div class="section-panel" id="step1">
         <div class="card">
             <h2>פרטי התובע/ת</h2>
             <div class="form-grid">
@@ -952,10 +1151,146 @@
 </div>
 
 <script>
-    let currentStep = 1;
+    let currentStep = 0;
     let lastData = null;
     let lastResult = null;
     let lastAiResponse = null;
+    let uploadedFiles = [];  // {name, type, data (base64)}
+
+    // ── Step 0 functions ───────────────────────────────────────────
+
+    function skipToManual() {
+        document.getElementById('step0').classList.remove('active');
+        document.getElementById('main-stepper').style.display = 'flex';
+        goToStep(1);
+    }
+
+    function showUploadArea() {
+        document.getElementById('upload-area').style.display = 'block';
+    }
+
+    function handleFiles(fileListObj) {
+        const MAX_FILES = 5;
+        const newFiles = Array.from(fileListObj);
+        if (uploadedFiles.length + newFiles.length > MAX_FILES) {
+            alert('ניתן להעלות עד ' + MAX_FILES + ' קבצים');
+            return;
+        }
+        for (const file of newFiles) {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const base64 = reader.result.split(',')[1];
+                uploadedFiles.push({ name: file.name, type: file.type, data: base64 });
+                renderFileList();
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
+    function renderFileList() {
+        const ul = document.getElementById('file-list');
+        ul.innerHTML = '';
+        uploadedFiles.forEach((f, i) => {
+            const li = document.createElement('li');
+            li.innerHTML = `${f.name} <span class="remove-file" onclick="removeFile(${i})">✕</span>`;
+            ul.appendChild(li);
+        });
+        document.getElementById('analyze-btn-row').style.display = uploadedFiles.length > 0 ? 'flex' : 'none';
+    }
+
+    function removeFile(idx) {
+        uploadedFiles.splice(idx, 1);
+        renderFileList();
+    }
+
+    // Drag-and-drop support
+    document.addEventListener('DOMContentLoaded', () => {
+        const zone = document.getElementById('upload-zone');
+        if (!zone) return;
+        zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+        zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+        zone.addEventListener('drop', e => {
+            e.preventDefault();
+            zone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+    });
+
+    async function analyzeDocuments() {
+        if (uploadedFiles.length === 0) { alert('יש להעלות קובץ אחד לפחות'); return; }
+        document.getElementById('upload-loading').classList.add('active');
+        document.getElementById('extraction-results').style.display = 'none';
+
+        try {
+            const resp = await fetch('/extract-documents', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ files: uploadedFiles }),
+            });
+            const result = await resp.json();
+            document.getElementById('upload-loading').classList.remove('active');
+
+            if (!result.success) {
+                alert('שגיאה בניתוח: ' + (result.error || 'שגיאה לא ידועה'));
+                return;
+            }
+
+            displayExtractedData(result.extracted);
+        } catch (e) {
+            document.getElementById('upload-loading').classList.remove('active');
+            alert('שגיאה בתקשורת: ' + e.message);
+        }
+    }
+
+    function displayExtractedData(data) {
+        document.getElementById('ext_employee_name').value = data.employee_name || '';
+        document.getElementById('ext_id_number').value = data.id_number || '';
+        document.getElementById('ext_employer_name').value = data.employer_name || '';
+        document.getElementById('ext_employer_id').value = data.employer_id || '';
+        document.getElementById('ext_start_date').value = data.start_date || '';
+        document.getElementById('ext_end_date').value = data.end_date || '';
+        document.getElementById('ext_monthly_salary').value = data.monthly_salary || '';
+        document.getElementById('ext_job_title').value = data.job_title || '';
+        document.getElementById('ext_address').value = data.address || '';
+        const facts = Array.isArray(data.key_facts) ? data.key_facts.join('\n') : (data.key_facts || '');
+        document.getElementById('ext_key_facts').value = facts;
+        document.getElementById('extraction-results').style.display = 'block';
+    }
+
+    function applyExtractedData() {
+        const map = {
+            ext_employee_name: 'plaintiff_name',
+            ext_id_number: 'plaintiff_id',
+            ext_employer_name: 'defendant_name',
+            ext_employer_id: 'defendant_id',
+            ext_start_date: 'start_date',
+            ext_end_date: 'end_date',
+            ext_monthly_salary: 'base_salary',
+            ext_job_title: 'job_title',
+            ext_address: 'plaintiff_address',
+        };
+        for (const [src, dst] of Object.entries(map)) {
+            const val = document.getElementById(src).value;
+            if (val) {
+                const target = document.getElementById(dst);
+                if (target) target.value = val;
+            }
+        }
+        const facts = document.getElementById('ext_key_facts').value;
+        if (facts) {
+            const narrative = document.getElementById('narrative');
+            if (narrative) narrative.value = facts;
+        }
+    }
+
+    function confirmExtraction() {
+        applyExtractedData();
+        document.getElementById('step0').classList.remove('active');
+        document.getElementById('main-stepper').style.display = 'flex';
+        goToStep(1);
+    }
+
+    // ── End Step 0 functions ───────────────────────────────────────
 
     function toggleGlobalOT() {
         const section = document.getElementById('global_ot_section');
@@ -970,6 +1305,12 @@
     }
 
     function goToStep(step) {
+        // Ensure stepper is visible once we enter step 1+
+        if (step >= 1) {
+            document.getElementById('step0').classList.remove('active');
+            document.getElementById('main-stepper').style.display = 'flex';
+        }
+
         // Update visibility
         document.querySelectorAll('.section-panel').forEach(p => p.classList.remove('active'));
         document.getElementById('step' + step).classList.add('active');
