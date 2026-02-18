@@ -73,7 +73,7 @@ def _get_claude_client():
     if _claude_client is None and ANTHROPIC_API_KEY:
         _claude_client = anthropic.Anthropic(
             api_key=ANTHROPIC_API_KEY,
-            timeout=90.0,  # 90s timeout for AI generation requests
+            timeout=150.0,  # 150s timeout for AI generation requests
         )
     return _claude_client
 

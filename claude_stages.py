@@ -12,8 +12,8 @@ import traceback
 import anthropic
 
 MODEL = "claude-haiku-4-5-20251001"
-MAX_TOKENS = 8192
-API_TIMEOUT = 60.0
+MAX_TOKENS = 3000
+API_TIMEOUT = 150.0
 
 
 # ── Gender replacement maps ──────────────────────────────────────────────────
