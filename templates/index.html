@@ -520,18 +520,30 @@
 
             <!-- Upload area (hidden initially) -->
             <div id="upload-area" style="display:none; margin-top: 1.5rem; text-align: right;">
-                <div class="upload-zone" id="upload-zone"
-                     onclick="document.getElementById('file-input').click()">
-                    <div class="icon">📄</div>
-                    <strong>גררו קבצים לכאן או לחצו לבחירה</strong>
-                    <p>תמונות (JPG, PNG) או PDF — עד 50 קבצים</p>
-                </div>
-                <input type="file" id="file-input" multiple accept="image/*,.pdf" style="display:none"
-                       onchange="handleFiles(this.files)">
-                <ul class="file-list" id="file-list"></ul>
 
-                <div class="btn-row" id="analyze-btn-row" style="display:none;">
-                    <button class="btn btn-accent" onclick="analyzeDocuments()">שלח לניתוח</button>
+                <!-- Upload status bar -->
+                <div id="upload-status" style="display:none; background: var(--bg); border-radius: 8px; padding: 0.8rem 1rem; margin-bottom: 1rem; border-right: 3px solid var(--accent);">
+                    <span style="font-weight: 600; color: var(--primary);" id="upload-total-count">0 קבצים הועלו</span>
+                    <span style="color: var(--text-muted); margin-right: 0.5rem;" id="upload-batch-count"></span>
+                </div>
+
+                <div id="upload-zone-wrapper">
+                    <div class="upload-zone" id="upload-zone"
+                         onclick="document.getElementById('file-input').click()">
+                        <div class="icon">📄</div>
+                        <strong>גררו קבצים לכאן או לחצו לבחירה</strong>
+                        <p>תמונות (JPG, PNG) או PDF — עד 30 קבצים בכל סבב</p>
+                    </div>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.4rem;">
+                        ניתן להעלות עד 30 קבצים בכל פעם. ניתן להעלות קבצים נוספים לאחר כל סבב.
+                    </p>
+                    <input type="file" id="file-input" multiple accept="image/*,.pdf" style="display:none"
+                           onchange="handleFiles(this.files)">
+                    <ul class="file-list" id="file-list"></ul>
+
+                    <div class="btn-row" id="analyze-btn-row" style="display:none;">
+                        <button class="btn btn-accent" onclick="analyzeDocuments()">שלח לניתוח</button>
+                    </div>
                 </div>
 
                 <div class="loading" id="upload-loading">
@@ -586,7 +598,8 @@
                         </div>
                     </div>
                     <div class="btn-row">
-                        <button class="btn btn-success" onclick="confirmExtraction()">אשר והמשך</button>
+                        <button class="btn btn-accent" onclick="startNewBatch()">העלה קבצים נוספים</button>
+                        <button class="btn btn-success" onclick="confirmExtraction()">סיים העלאה והמשך למילוי הטופס</button>
                         <button class="btn btn-outline" onclick="skipToManual()">דלג ומלא ידנית</button>
                     </div>
                 </div>
@@ -1155,7 +1168,10 @@
     let lastData = null;
     let lastResult = null;
     let lastAiResponse = null;
-    let uploadedFiles = [];  // {name, type, data (base64)}
+    let batchFiles = [];       // current batch: {name, type, data}
+    let totalFilesUploaded = 0; // running total across all batches
+    let batchCount = 0;         // number of batches analyzed
+    const MAX_BATCH = 30;
 
     // ── Step 0 functions ───────────────────────────────────────────
 
@@ -1170,17 +1186,16 @@
     }
 
     function handleFiles(fileListObj) {
-        const MAX_FILES = 50;
         const newFiles = Array.from(fileListObj);
-        if (uploadedFiles.length + newFiles.length > MAX_FILES) {
-            alert('ניתן להעלות עד ' + MAX_FILES + ' קבצים');
+        if (batchFiles.length + newFiles.length > MAX_BATCH) {
+            alert('ניתן להעלות עד ' + MAX_BATCH + ' קבצים בכל סבב');
             return;
         }
         for (const file of newFiles) {
             const reader = new FileReader();
             reader.onload = () => {
                 const base64 = reader.result.split(',')[1];
-                uploadedFiles.push({ name: file.name, type: file.type, data: base64 });
+                batchFiles.push({ name: file.name, type: file.type, data: base64 });
                 renderFileList();
             };
             reader.readAsDataURL(file);
@@ -1190,17 +1205,30 @@
     function renderFileList() {
         const ul = document.getElementById('file-list');
         ul.innerHTML = '';
-        uploadedFiles.forEach((f, i) => {
+        batchFiles.forEach((f, i) => {
             const li = document.createElement('li');
             li.innerHTML = `${f.name} <span class="remove-file" onclick="removeFile(${i})">✕</span>`;
             ul.appendChild(li);
         });
-        document.getElementById('analyze-btn-row').style.display = uploadedFiles.length > 0 ? 'flex' : 'none';
+        document.getElementById('analyze-btn-row').style.display = batchFiles.length > 0 ? 'flex' : 'none';
     }
 
     function removeFile(idx) {
-        uploadedFiles.splice(idx, 1);
+        batchFiles.splice(idx, 1);
         renderFileList();
+    }
+
+    function updateUploadStatus() {
+        const statusEl = document.getElementById('upload-status');
+        const countEl = document.getElementById('upload-total-count');
+        const batchEl = document.getElementById('upload-batch-count');
+        if (totalFilesUploaded > 0) {
+            statusEl.style.display = 'block';
+            countEl.textContent = totalFilesUploaded + ' קבצים הועלו ונותחו';
+            batchEl.textContent = '(' + batchCount + ' סבבים)';
+        } else {
+            statusEl.style.display = 'none';
+        }
     }
 
     // Drag-and-drop support
@@ -1217,44 +1245,85 @@
     });
 
     async function analyzeDocuments() {
-        if (uploadedFiles.length === 0) { alert('יש להעלות קובץ אחד לפחות'); return; }
+        if (batchFiles.length === 0) { alert('יש להעלות קובץ אחד לפחות'); return; }
         document.getElementById('upload-loading').classList.add('active');
         document.getElementById('extraction-results').style.display = 'none';
+        document.getElementById('upload-zone-wrapper').style.display = 'none';
 
         try {
             const resp = await fetch('/extract-documents', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ files: uploadedFiles }),
+                body: JSON.stringify({ files: batchFiles }),
             });
             const result = await resp.json();
             document.getElementById('upload-loading').classList.remove('active');
 
             if (!result.success) {
+                document.getElementById('upload-zone-wrapper').style.display = 'block';
                 alert('שגיאה בניתוח: ' + (result.error || 'שגיאה לא ידועה'));
                 return;
             }
 
-            displayExtractedData(result.extracted);
+            // Update counters
+            totalFilesUploaded += batchFiles.length;
+            batchCount++;
+            batchFiles = [];
+            updateUploadStatus();
+
+            // Merge extracted data with existing fields
+            mergeExtractedData(result.extracted);
+            document.getElementById('extraction-results').style.display = 'block';
         } catch (e) {
             document.getElementById('upload-loading').classList.remove('active');
+            document.getElementById('upload-zone-wrapper').style.display = 'block';
             alert('שגיאה בתקשורת: ' + e.message);
         }
     }
 
-    function displayExtractedData(data) {
-        document.getElementById('ext_employee_name').value = data.employee_name || '';
-        document.getElementById('ext_id_number').value = data.id_number || '';
-        document.getElementById('ext_employer_name').value = data.employer_name || '';
-        document.getElementById('ext_employer_id').value = data.employer_id || '';
-        document.getElementById('ext_start_date').value = data.start_date || '';
-        document.getElementById('ext_end_date').value = data.end_date || '';
-        document.getElementById('ext_monthly_salary').value = data.monthly_salary || '';
-        document.getElementById('ext_job_title').value = data.job_title || '';
-        document.getElementById('ext_address').value = data.address || '';
-        const facts = Array.isArray(data.key_facts) ? data.key_facts.join('\n') : (data.key_facts || '');
-        document.getElementById('ext_key_facts').value = facts;
-        document.getElementById('extraction-results').style.display = 'block';
+    function mergeExtractedData(data) {
+        // For each field: only overwrite if the new value is non-empty AND either the
+        // existing field is empty OR the new value is different (new data wins for
+        // non-empty values — later batches refine earlier ones).
+        const fields = [
+            ['employee_name', 'ext_employee_name'],
+            ['id_number', 'ext_id_number'],
+            ['employer_name', 'ext_employer_name'],
+            ['employer_id', 'ext_employer_id'],
+            ['start_date', 'ext_start_date'],
+            ['end_date', 'ext_end_date'],
+            ['monthly_salary', 'ext_monthly_salary'],
+            ['job_title', 'ext_job_title'],
+            ['address', 'ext_address'],
+        ];
+        for (const [dataKey, elId] of fields) {
+            const newVal = (data[dataKey] != null && data[dataKey] !== '') ? String(data[dataKey]) : '';
+            if (newVal) {
+                const el = document.getElementById(elId);
+                if (el && !el.value) {
+                    el.value = newVal;
+                }
+            }
+        }
+        // key_facts: append new facts to existing ones
+        const newFacts = Array.isArray(data.key_facts) ? data.key_facts.join('\n') : (data.key_facts || '');
+        if (newFacts) {
+            const el = document.getElementById('ext_key_facts');
+            if (el.value) {
+                el.value = el.value.trim() + '\n' + newFacts;
+            } else {
+                el.value = newFacts;
+            }
+        }
+    }
+
+    function startNewBatch() {
+        // Reset batch, show upload zone again, hide results
+        batchFiles = [];
+        document.getElementById('file-input').value = '';
+        renderFileList();
+        document.getElementById('upload-zone-wrapper').style.display = 'block';
+        document.getElementById('extraction-results').style.display = 'none';
     }
 
     function applyExtractedData() {
