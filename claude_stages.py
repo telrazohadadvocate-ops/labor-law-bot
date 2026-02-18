@@ -270,6 +270,20 @@ def _build_system_prompt(gender, firm_patterns=None):
 - השתמש ב-=== כותרת === כמפריד סעיפים
 - הוסף סעיפים נוספים לפי הצורך בהתאם לעובדות התיק (למשל: שימוע ופיטורים, התעמרות, שעות נוספות)"""
 
+    system += """
+
+TECHNICAL OVERRIDE - OUTPUT FORMAT:
+Your output will be written into a .docx file exactly as-is.
+Therefore:
+- Output ONLY the final pleading text in Hebrew
+- Do NOT output JSON, markdown, code blocks, commentary, or metadata
+- Use === SECTION TITLE === as section delimiters (e.g. === כללי === or === רקע עובדתי ===)
+- Number paragraphs continuously: 1. 2. 3. etc.
+- Separate paragraphs with blank lines
+- For appendix references start line with the triangle symbol ◄
+- Do NOT wrap in quotes, brackets, or any markup
+- Output clean Hebrew text ONLY"""
+
     # Append firm style hints if available
     if firm_patterns and firm_patterns.get("patterns"):
         import json

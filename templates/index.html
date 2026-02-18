@@ -1278,6 +1278,7 @@
             stopAiProgress(true);
             lastResult = result;
             lastAiResponse = result.ai_response;
+            window.aiGeneratedText = result.ai_text || '';
 
             // Display duration
             const dur = result.calculations.duration;
@@ -1426,8 +1427,11 @@
         if (!lastData) return;
 
         try {
-            // Include AI response in the request if available
+            // Include AI text and response in the request if available
             const requestData = { ...lastData };
+            if (window.aiGeneratedText) {
+                requestData.ai_body_text = window.aiGeneratedText;
+            }
             if (lastAiResponse) {
                 requestData._ai_response = lastAiResponse;
             }

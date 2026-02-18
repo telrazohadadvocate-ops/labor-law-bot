@@ -20,6 +20,7 @@ import io
 import anthropic
 
 from claude_stages import generate_claim_single, fix_gender, parse_plain_text_sections
+from docx_generator_v2 import generate_claim_docx
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
@@ -2040,6 +2041,7 @@ def generate_ai_route():
                 "mode": "ai",
                 "calculations": calculations,
                 "claim_text": plain_text,
+                "ai_text": plain_text,
                 "ai_response": ai_response,
                 "preview": preview,
             })
@@ -2084,20 +2086,41 @@ def generate_docx_route():
     try:
         calculations = calculate_all_claims(data)
 
-        # Check if AI response is provided (from /generate-ai flow)
-        ai_response = data.get("_ai_response")
+        # Check if ai_body_text is provided (new v2 flow)
+        ai_body_text = data.get("ai_body_text", "")
 
+        if ai_body_text and len(ai_body_text) > 100:
+            # ── New v2 generator: plain text from Claude ──
+            logging.info(f"generate-docx: using v2 generator with {len(ai_body_text)} chars of AI text")
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+                tmp_path = tmp.name
+
+            # Attach claims and total to form_data for the generator
+            v2_data = dict(data)
+            v2_data["_claims"] = calculations["claims"]
+            v2_data["_total"] = calculations["total"]
+
+            generate_claim_docx(v2_data, ai_body_text, tmp_path)
+
+            return send_file(
+                tmp_path,
+                as_attachment=True,
+                download_name=f"כתב_תביעה_{data.get('plaintiff_name', 'claim')}.docx",
+                mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+
+        # ── Legacy flow: check for _ai_response or fall back to template ──
+        ai_response = data.get("_ai_response")
         logging.info(f"generate-docx: ai_response present = {ai_response is not None}")
 
         if ai_response and ai_response.get("sections"):
-            # AI mode: sections are already parsed as {title, lines} dicts
             ai_sections = ai_response.get("sections", [])
             logging.info(f"generate-docx: AI mode with {len(ai_sections)} plain-text sections")
             for i, s in enumerate(ai_sections):
                 logging.info(f"  [{i}] '{s.get('title', '')}' — {len(s.get('lines', []))} lines")
             doc = generate_docx(data, calculations, ai_plain_sections=ai_sections)
         else:
-            # Template fallback
             logging.warning("generate-docx: No AI sections — falling back to template mode")
             claim_text = generate_claim_text(data, calculations)
             doc = generate_docx(data, calculations, claim_text=claim_text)
@@ -2116,6 +2139,8 @@ def generate_docx_route():
             mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
     except Exception as e:
+        logging.error(f"generate-docx error: {e}")
+        logging.error(traceback.format_exc())
         return jsonify({"success": False, "error": str(e)}), 400
 
 
