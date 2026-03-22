@@ -1183,6 +1183,13 @@
                 <button class="btn btn-outline" onclick="goToStep(4)">חזרה לעריכה</button>
                 <button class="btn btn-accent" onclick="downloadDocx()">הורד כקובץ Word</button>
                 <button class="btn btn-primary" onclick="copyClaimText()">העתק טקסט</button>
+                <button class="btn" id="demand-letter-btn" onclick="downloadDemandLetter()"
+                    style="background: linear-gradient(135deg, #c0392b, #e74c3c); color: white; border: none; font-weight: bold;">
+                    📨 צור מכתב התראה
+                </button>
+            </div>
+            <div id="demand-letter-loading" style="display:none; text-align:center; margin-top:0.5rem; font-size:0.9rem; color:var(--text-muted);">
+                ⏳ מייצר מכתב התראה...
             </div>
         </div>
     </div>
@@ -2060,6 +2067,42 @@
             URL.revokeObjectURL(url);
         } catch (e) {
             alert('שגיאה: ' + e.message);
+        }
+    }
+
+    async function downloadDemandLetter() {
+        if (!lastData) { alert('יש לחשב את התביעה תחילה'); return; }
+
+        const btn = document.getElementById('demand-letter-btn');
+        const loadingEl = document.getElementById('demand-letter-loading');
+        btn.disabled = true;
+        loadingEl.style.display = 'block';
+
+        try {
+            const resp = await fetch('/generate-demand-letter', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(lastData),
+            });
+
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({ error: 'שגיאה לא ידועה' }));
+                alert('שגיאה ביצירת מכתב ההתראה: ' + (err.error || resp.status));
+                return;
+            }
+
+            const blob = await resp.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `מכתב_התראה_${lastData.plaintiff_name || 'demand'}.docx`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            alert('שגיאה: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            loadingEl.style.display = 'none';
         }
     }
 

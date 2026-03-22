@@ -2511,6 +2511,198 @@ def generate_docx_route():
         return jsonify({"success": False, "error": str(e)}), 400
 
 
+@app.route("/generate-demand-letter", methods=["POST"])
+def generate_demand_letter():
+    """Generate a professional Hebrew demand letter (מכתב התראה) as DOCX."""
+    data = request.json
+    try:
+        calculations = calculate_all_claims(data)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 400
+
+    client = _get_claude_client()
+
+    plaintiff = data.get("plaintiff_name", "")
+    defendant = data.get("defendant_name", "")
+    defendant_address = data.get("defendant_address", "")
+    today_str = date.today().strftime("%d.%m.%Y")
+    total = calculations["total"]
+    claims = calculations["claims"]
+
+    # Build claims summary for the prompt
+    claims_lines = "\n".join(
+        f"- {c['name']}: {c['amount']:,.0f} ₪" for c in claims.values()
+    )
+    limitation_warnings = calculations.get("limitation_warnings", [])
+    lim_note = ""
+    if limitation_warnings:
+        lim_note = "\nאזהרות התיישנות:\n" + "\n".join(f"- {w}" for w in limitation_warnings)
+
+    ai_prompt = (
+        f"כתוב מכתב התראה מקצועי בעברית רשמית ממשרד עורכי הדין לוין תלרז לטובת {plaintiff} "
+        f"הנשלח למעסיק {defendant}.\n\n"
+        f"כלול:\n"
+        f"1. כותרת מכתב עם תאריך: {today_str}\n"
+        f"2. פנייה לנמען: {defendant or '[שם המעסיק]'} {('| ' + defendant_address) if defendant_address else ''}\n"
+        f"3. פתיחה: הנדון: דרישה מוקדמת לתשלום זכויות העובד {plaintiff} — לפני נקיטת הליכים משפטיים\n"
+        f"4. פסקת פתיחה: הפנייה מטעם {plaintiff} המיוצג/ת על ידי משרדנו\n"
+        f"5. פירוט הרכיבים הבאים עם ציון החוק הרלוונטי לכל אחד:\n"
+        f"{claims_lines}\n"
+        f"6. סה\"כ דרישה: {total:,.0f} ₪ קרן\n"
+        f"7. הדגש שבהיעדר תשלום תוך 14 ימים יוגשו הליכים משפטיים לבית הדין לעבודה\n"
+        f"8. אזהרה ספציפית לגבי פיצויי הלנת שכר לפי חוק הגנת השכר, תשי\"ח-1958 וריבית מיוחדת\n"
+        f"9. חתימה: משרד לוין תלרז, עורכי דין — דיני עבודה\n"
+        f"{lim_note}\n\n"
+        f"כתוב את המכתב כולו בעברית רשמית ומקצועית. "
+        f"אל תוסיף כל מידע שאינו מצוין לעיל. "
+        f"הפנה לחוקים המדויקים: חוק פיצויי פיטורים תשכ\"ג-1963, חוק הגנת השכר תשי\"ח-1958, "
+        f"חוק חופשה שנתית תשי\"א-1951, חוק עבודה בשעות נוספות תשי\"א-1951, "
+        f"חוק פנסיה חובה תשס\"ח-2008.\n"
+        f"החזר את טקסט המכתב בלבד, ללא הסברים."
+    )
+
+    if client:
+        try:
+            msg = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=3000,
+                system=(
+                    "אתה עורך דין ישראלי המתמחה בדיני עבודה. "
+                    "כתוב מכתבי התראה מקצועיים בעברית רשמית."
+                ),
+                messages=[{"role": "user", "content": ai_prompt}],
+            )
+            letter_text = msg.content[0].text.strip()
+            logging.info(f"generate-demand-letter: AI letter generated, {len(letter_text)} chars")
+        except Exception as e:
+            logging.error(f"generate-demand-letter: Claude API error: {e}")
+            letter_text = None
+    else:
+        letter_text = None
+
+    # Fallback: build template letter if Claude unavailable
+    if not letter_text:
+        lines = []
+        lines.append(f"תאריך: {today_str}")
+        lines.append("")
+        lines.append(f"לכבוד: {defendant or '[שם המעסיק]'}")
+        if defendant_address:
+            lines.append(defendant_address)
+        lines.append("")
+        lines.append(f"הנדון: דרישה מוקדמת לתשלום זכויות העובד {plaintiff} — לפני נקיטת הליכים משפטיים")
+        lines.append("")
+        lines.append(f"אנו פונים אליכם בשם מרשנו/ת {plaintiff}, שהועסק/ה בעסקכם ואשר יחסי העבודה בינו/בינה לבין {defendant} הסתיימו.")
+        lines.append("")
+        lines.append("עיון בזכויות מרשנו/ת מגלה כי הסכומים הבאים לא שולמו:")
+        lines.append("")
+        for c in claims.values():
+            lines.append(f"• {c['name']}: {c['amount']:,.0f} ₪")
+        lines.append("")
+        lines.append(f"סה\"כ: {total:,.0f} ₪ (קרן, לא כולל הפרשי הצמדה וריבית)")
+        lines.append("")
+        lines.append(
+            "הנכם מתבקשים לשלם את הסכום הנ\"ל תוך 14 ימים ממועד קבלת מכתב זה. "
+            "היעדר תשלום יחייב את מרשנו/ת לנקוט בהליכים משפטיים בבית הדין לעבודה, "
+            "ובנוסף יחול פיצוי הלנת שכר לפי חוק הגנת השכר, תשי\"ח-1958."
+        )
+        lines.append("")
+        lines.append("בכבוד רב,")
+        lines.append("משרד לוין תלרז, עורכי דין — דיני עבודה")
+        letter_text = "\n".join(lines)
+
+    # Build DOCX
+    from docx import Document as _Doc
+    from docx.shared import Pt as _Pt, RGBColor as _RGB
+    from docx.enum.text import WD_ALIGN_PARAGRAPH as _ALIGN
+    from docx.oxml.ns import qn as _qn
+    from lxml import etree as _etree
+
+    doc = _Doc()
+
+    # Page setup
+    for section in doc.sections:
+        sectPr = section._sectPr
+        pgSz = sectPr.find(_qn('w:pgSz'))
+        if pgSz is None:
+            pgSz = _etree.SubElement(sectPr, _qn('w:pgSz'))
+        pgSz.set(_qn('w:w'), '12240')
+        pgSz.set(_qn('w:h'), '15840')
+
+        pgMar = sectPr.find(_qn('w:pgMar'))
+        if pgMar is None:
+            pgMar = _etree.SubElement(sectPr, _qn('w:pgMar'))
+        pgMar.set(_qn('w:top'), '1134')
+        pgMar.set(_qn('w:right'), '1800')
+        pgMar.set(_qn('w:bottom'), '1276')
+        pgMar.set(_qn('w:left'), '1800')
+
+    def _set_rtl_para(para):
+        pPr = para._p.get_or_add_pPr()
+        bidi = _etree.SubElement(pPr, _qn('w:bidi'))
+        jc = pPr.find(_qn('w:jc'))
+        if jc is None:
+            jc = _etree.SubElement(pPr, _qn('w:jc'))
+        jc.set(_qn('w:val'), 'right')
+
+    def _add_para(text, bold=False, size=12, align="right", color=None, space_before=0, space_after=60):
+        p = doc.add_paragraph()
+        _set_rtl_para(p)
+        pPr = p._p.get_or_add_pPr()
+        sp = _etree.SubElement(pPr, _qn('w:spacing'))
+        sp.set(_qn('w:before'), str(space_before))
+        sp.set(_qn('w:after'), str(space_after))
+        run = p.add_run(text)
+        run.bold = bold
+        run.font.name = "David"
+        run.font.size = _Pt(size)
+        if color:
+            r, g, b = int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
+            run.font.color.rgb = _RGB(r, g, b)
+        rPr = run._r.get_or_add_rPr()
+        rFonts = _etree.SubElement(rPr, _qn('w:rFonts'))
+        rFonts.set(_qn('w:ascii'), 'David')
+        rFonts.set(_qn('w:hAnsi'), 'David')
+        rFonts.set(_qn('w:cs'), 'David')
+        return p
+
+    # Firm header
+    hdr_p = _add_para("משרד לוין תלרז — עורכי דין | דיני עבודה", bold=True, size=14, color="1A365D", space_before=0, space_after=40)
+    _add_para("מכתב התראה לפני נקיטת הליכים משפטיים", bold=True, size=12, color="C6A04A", space_before=0, space_after=200)
+
+    # Horizontal rule via empty para with bottom border
+    rule_p = doc.add_paragraph()
+    pPr = rule_p._p.get_or_add_pPr()
+    pBdr = _etree.SubElement(pPr, _qn('w:pBdr'))
+    bottom = _etree.SubElement(pBdr, _qn('w:bottom'))
+    bottom.set(_qn('w:val'), 'single')
+    bottom.set(_qn('w:sz'), '6')
+    bottom.set(_qn('w:space'), '1')
+    bottom.set(_qn('w:color'), '1A365D')
+
+    # Letter body — split on newlines
+    for line in letter_text.split("\n"):
+        _add_para(line, size=12, space_before=0, space_after=60)
+
+    # Footer
+    _add_para("", space_before=200, space_after=0)
+    _add_para("─────────────────────────────────────────────────────────", size=10, color="9E9E9E", space_before=0, space_after=20)
+    _add_para("משרד לוין תלרז, עורכי דין — דיני עבודה", bold=True, size=10, color="1A365D", space_before=0, space_after=20)
+    _add_para("כל הזכויות שמורות. מסמך זה הופק על ידי מערכת מחולל כתבי התביעה.", size=9, color="9E9E9E", space_before=0, space_after=0)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+
+    filename = f"מכתב_התראה_{plaintiff or 'demand'}.docx"
+    logging.info(f"generate-demand-letter: returning DOCX '{filename}'")
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
 if __name__ == "__main__":
     import os
     debug = os.environ.get("FLASK_DEBUG", "true").lower() == "true"
