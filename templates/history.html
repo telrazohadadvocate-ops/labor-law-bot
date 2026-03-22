@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>היסטוריית תיקים | לוין תלרז</title>
+    <style>
+        :root {
+            --primary: #1a365d; --primary-light: #2c5282; --accent: #c6a04a;
+            --bg: #f0f4f8; --card: #ffffff; --text: #1a202c;
+            --text-muted: #718096; --border: #e2e8f0;
+            --success: #38a169; --danger: #e53e3e; --warn: #d69e2e;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Segoe UI','David',Arial,sans-serif; background:var(--bg); color:var(--text); direction:rtl; }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            color:white; padding:1rem 2rem;
+            display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;
+        }
+        .header h1 { font-size:1.4rem; }
+        .header-links { display:flex; gap:0.8rem; }
+        .header-links a {
+            color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;
+            padding:0.3rem 0.8rem; border:1px solid rgba(255,255,255,0.4); border-radius:6px;
+        }
+
+        .container { max-width:1200px; margin:1.5rem auto; padding:0 1.2rem; }
+
+        /* Stats row */
+        .stats-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:0.8rem; margin-bottom:1.5rem; }
+        .stat-card {
+            background:var(--card); border-radius:10px; padding:0.9rem 1rem;
+            box-shadow:0 1px 4px rgba(0,0,0,0.08); text-align:center;
+        }
+        .stat-value { font-size:1.6rem; font-weight:800; color:var(--primary); }
+        .stat-label { font-size:0.8rem; color:var(--text-muted); margin-top:0.2rem; }
+        .stat-sub   { font-size:0.75rem; color:var(--text-muted); }
+
+        /* Filters */
+        .filters {
+            background:var(--card); border-radius:10px; padding:1rem;
+            box-shadow:0 1px 4px rgba(0,0,0,0.08); margin-bottom:1.2rem;
+        }
+        .filters-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:0.7rem; align-items:end; }
+        .filter-group label { display:block; font-size:0.8rem; color:var(--text-muted); margin-bottom:0.25rem; }
+        .filter-group input, .filter-group select {
+            width:100%; padding:0.45rem 0.7rem; border:1.5px solid var(--border);
+            border-radius:6px; font-size:0.88rem; direction:rtl; font-family:inherit;
+        }
+        .filter-actions { display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:0.8rem; align-items:center; }
+        .btn { padding:0.45rem 1rem; border-radius:6px; border:none; cursor:pointer; font-size:0.88rem; font-weight:600; }
+        .btn-primary { background:var(--primary); color:white; }
+        .btn-accent  { background:var(--accent); color:var(--primary); }
+        .btn-success { background:var(--success); color:white; }
+        .btn-danger  { background:var(--danger); color:white; }
+        .btn-outline { background:white; border:1.5px solid var(--border); color:var(--text); }
+        .btn-sm { padding:0.3rem 0.6rem; font-size:0.8rem; }
+
+        /* Table */
+        .table-wrap { background:var(--card); border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,0.08); }
+        table { width:100%; border-collapse:collapse; font-size:0.88rem; }
+        thead tr { background:var(--primary); color:white; }
+        th { padding:0.65rem 0.8rem; text-align:right; font-weight:600; white-space:nowrap; cursor:pointer; user-select:none; }
+        th:hover { background:var(--primary-light); }
+        th .sort-arrow { font-size:0.7rem; margin-right:0.2rem; }
+        td { padding:0.55rem 0.8rem; border-bottom:1px solid var(--border); vertical-align:middle; }
+        tbody tr:hover { background:#f7f9fc; }
+        tbody tr:nth-child(even) { background:#fafbfd; }
+        tbody tr:nth-child(even):hover { background:#f0f4f8; }
+        .no-results { text-align:center; padding:2rem; color:var(--text-muted); }
+
+        /* Badges */
+        .badge { display:inline-block; padding:0.15rem 0.55rem; border-radius:10px; font-size:0.76rem; font-weight:600; }
+        .badge-active   { background:#ebf4ff; color:#2b6cb0; }
+        .badge-won      { background:#c6f6d5; color:#276749; }
+        .badge-settled  { background:#fefcbf; color:#975a16; }
+        .badge-lost     { background:#fed7d7; color:#c53030; }
+
+        /* Success rate bar */
+        .rate-bar { height:8px; border-radius:4px; background:var(--border); overflow:hidden; margin-top:0.3rem; }
+        .rate-fill { height:100%; border-radius:4px; background:var(--success); transition:width 0.5s; }
+
+        /* Inline edit */
+        .inline-edit { display:none; gap:0.3rem; align-items:center; }
+        .inline-edit.open { display:flex; }
+        .inline-select { padding:0.25rem 0.5rem; border:1.5px solid var(--border); border-radius:4px; font-size:0.8rem; }
+
+        /* Modal */
+        .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; align-items:center; justify-content:center; }
+        .modal-overlay.open { display:flex; }
+        .modal { background:white; border-radius:12px; padding:1.5rem; min-width:340px; max-width:480px; width:90%; direction:rtl; position:relative; max-height:90vh; overflow-y:auto; }
+        .modal h2 { color:var(--primary); margin-bottom:1rem; }
+        .modal label { display:block; font-size:0.85rem; color:var(--text-muted); margin-bottom:0.25rem; }
+        .modal select, .modal input, .modal textarea { width:100%; padding:0.5rem 0.7rem; border:1.5px solid var(--border); border-radius:6px; font-size:0.9rem; direction:rtl; font-family:inherit; margin-bottom:0.8rem; }
+        .modal textarea { resize:vertical; min-height:60px; }
+        .modal-close { position:absolute; top:0.8rem; left:0.8rem; background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--text-muted); }
+
+        #toast { position:fixed; bottom:1.5rem; right:1.5rem; background:var(--primary); color:white; padding:0.6rem 1.2rem; border-radius:8px; font-size:0.9rem; z-index:2000; display:none; }
+
+        @media(max-width:768px) {
+            .stats-row { grid-template-columns:1fr 1fr; }
+            .filters-grid { grid-template-columns:1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>היסטוריית תיקים — לוין תלרז</h1>
+    <div class="header-links">
+        <a href="/">מחולל תביעות</a>
+        <a href="/dashboard">לוח תיקים</a>
+        <a href="/logout">יציאה</a>
+    </div>
+</div>
+
+<div class="container">
+
+    <!-- Statistics -->
+    <div class="stats-row" id="stats-row">
+        <div class="stat-card"><div class="stat-value" id="stat-total">—</div><div class="stat-label">סה"כ תיקים</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-total-amount">—</div><div class="stat-label">סה"כ תביעות (₪)</div></div>
+        <div class="stat-card"><div class="stat-value" id="stat-avg">—</div><div class="stat-label">ממוצע לתיק (₪)</div></div>
+        <div class="stat-card">
+            <div class="stat-value" id="stat-won">—</div>
+            <div class="stat-label">ניצחון / פשרה / הפסד</div>
+            <div class="rate-bar"><div class="rate-fill" id="stat-rate-bar" style="width:0%;"></div></div>
+            <div class="stat-sub" id="stat-rate-txt"></div>
+        </div>
+        <div class="stat-card"><div class="stat-value" id="stat-active">—</div><div class="stat-label">תיקים פעילים</div></div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters">
+        <div class="filters-grid">
+            <div class="filter-group">
+                <label>חיפוש שם</label>
+                <input type="text" id="f-search" placeholder="תובע/ת, נתבע/ת...">
+            </div>
+            <div class="filter-group">
+                <label>סטטוס</label>
+                <select id="f-status">
+                    <option value="">הכל</option>
+                    <option value="active">פעיל</option>
+                    <option value="won">ניצחון</option>
+                    <option value="settled">פשרה</option>
+                    <option value="lost">הפסד</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>שלב</label>
+                <select id="f-stage">
+                    <option value="">כל השלבים</option>
+                    {% for stage in stages %}
+                    <option value="{{ stage }}">{{ stage }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>מתאריך</label>
+                <input type="date" id="f-date-from">
+            </div>
+            <div class="filter-group">
+                <label>עד תאריך</label>
+                <input type="date" id="f-date-to">
+            </div>
+            <div class="filter-group">
+                <label>סכום מינימום (₪)</label>
+                <input type="number" id="f-amount-min" placeholder="0">
+            </div>
+            <div class="filter-group">
+                <label>סכום מקסימום (₪)</label>
+                <input type="number" id="f-amount-max" placeholder="ללא הגבלה">
+            </div>
+        </div>
+        <div class="filter-actions">
+            <button class="btn btn-primary" onclick="applyFilters()">סנן</button>
+            <button class="btn btn-outline" onclick="clearFilters()">נקה</button>
+            <span id="results-count" style="font-size:0.85rem; color:var(--text-muted);"></span>
+            <div style="margin-right:auto;"></div>
+            <a href="/history/export" class="btn btn-success">📥 ייצוא Excel</a>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap">
+        <table id="cases-table">
+            <thead>
+                <tr>
+                    <th onclick="sortBy('plaintiff_name')">תובע/ת <span class="sort-arrow" data-col="plaintiff_name"></span></th>
+                    <th onclick="sortBy('defendant_name')">נתבע/ת <span class="sort-arrow" data-col="defendant_name"></span></th>
+                    <th onclick="sortBy('total_amount')">סכום תביעה <span class="sort-arrow" data-col="total_amount"></span></th>
+                    <th onclick="sortBy('stage')">שלב <span class="sort-arrow" data-col="stage"></span></th>
+                    <th onclick="sortBy('status')">סטטוס <span class="sort-arrow" data-col="status"></span></th>
+                    <th onclick="sortBy('outcome')">תוצאה <span class="sort-arrow" data-col="outcome"></span></th>
+                    <th onclick="sortBy('outcome_amount')">סכום שהתקבל <span class="sort-arrow" data-col="outcome_amount"></span></th>
+                    <th onclick="sortBy('created_at')">תאריך <span class="sort-arrow" data-col="created_at"></span></th>
+                    <th>פעולות</th>
+                </tr>
+            </thead>
+            <tbody id="cases-tbody">
+                <tr><td colspan="9" class="no-results">טוען...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal-overlay" id="edit-modal">
+    <div class="modal">
+        <button class="modal-close" onclick="closeEditModal()">✕</button>
+        <h2 id="edit-modal-title">עדכון תיק</h2>
+        <input type="hidden" id="edit-id">
+
+        <label>סטטוס</label>
+        <select id="edit-status">
+            <option value="active">פעיל</option>
+            <option value="won">ניצחון</option>
+            <option value="settled">פשרה</option>
+            <option value="lost">הפסד</option>
+        </select>
+
+        <label>תוצאה</label>
+        <select id="edit-outcome">
+            <option value="">—</option>
+            <option value="won">ניצחון</option>
+            <option value="settled">פשרה</option>
+            <option value="lost">הפסד</option>
+        </select>
+
+        <label>סכום שהתקבל בפועל (₪)</label>
+        <input type="number" id="edit-outcome-amount" placeholder="0">
+
+        <label>שלב</label>
+        <select id="edit-stage">
+            {% for stage in stages %}<option value="{{ stage }}">{{ stage }}</option>{% endfor %}
+        </select>
+
+        <label>מועד אחרון (התיישנות)</label>
+        <input type="date" id="edit-deadline">
+
+        <label>הערות</label>
+        <textarea id="edit-notes" rows="3"></textarea>
+
+        <div style="display:flex; gap:0.6rem; margin-top:0.5rem; flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="saveEdit()">שמור</button>
+            <button class="btn btn-danger" onclick="deleteCase()">מחק</button>
+            <button class="btn btn-outline" onclick="closeEditModal()">ביטול</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let allCases = [];
+let filtered = [];
+let sortCol = 'created_at';
+let sortDir = -1; // -1 = desc, 1 = asc
+
+const STATUS_LABEL = { active:'פעיל', won:'ניצחון', settled:'פשרה', lost:'הפסד' };
+const STATUS_BADGE = { active:'badge-active', won:'badge-won', settled:'badge-settled', lost:'badge-lost' };
+const OUTCOME_LABEL = { won:'ניצחון', settled:'פשרה', lost:'הפסד', '':'—' };
+
+async function loadCases() {
+    const resp = await fetch('/api/cases');
+    allCases = await resp.json();
+    applyFilters();
+    renderStats(allCases);
+}
+
+function renderStats(data) {
+    const total = data.length;
+    const totalAmt = data.reduce((s,c) => s + (c.total_amount||0), 0);
+    const avg = total > 0 ? totalAmt / total : 0;
+    const active = data.filter(c => c.status === 'active').length;
+    const won = data.filter(c => c.status === 'won' || c.outcome === 'won').length;
+    const settled = data.filter(c => c.status === 'settled' || c.outcome === 'settled').length;
+    const lost = data.filter(c => c.status === 'lost' || c.outcome === 'lost').length;
+    const closed = won + settled + lost;
+    const rate = closed > 0 ? Math.round((won + settled) / closed * 100) : 0;
+
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-total-amount').textContent = Math.round(totalAmt).toLocaleString();
+    document.getElementById('stat-avg').textContent = Math.round(avg).toLocaleString();
+    document.getElementById('stat-active').textContent = active;
+    document.getElementById('stat-won').textContent = `${won} / ${settled} / ${lost}`;
+    document.getElementById('stat-rate-bar').style.width = rate + '%';
+    document.getElementById('stat-rate-txt').textContent = closed > 0 ? `שיעור הצלחה: ${rate}%` : 'אין תיקים סגורים';
+}
+
+function applyFilters() {
+    const search = (document.getElementById('f-search').value || '').toLowerCase();
+    const status = document.getElementById('f-status').value;
+    const stage  = document.getElementById('f-stage').value;
+    const dateFrom = document.getElementById('f-date-from').value;
+    const dateTo   = document.getElementById('f-date-to').value;
+    const amtMin = parseFloat(document.getElementById('f-amount-min').value) || 0;
+    const amtMax = parseFloat(document.getElementById('f-amount-max').value) || Infinity;
+
+    filtered = allCases.filter(c => {
+        if (search && !(
+            (c.plaintiff_name||'').toLowerCase().includes(search) ||
+            (c.defendant_name||'').toLowerCase().includes(search)
+        )) return false;
+        if (status && c.status !== status) return false;
+        if (stage  && c.stage  !== stage)  return false;
+        if (dateFrom && (c.created_at||'') < dateFrom) return false;
+        if (dateTo   && (c.created_at||'').slice(0,10) > dateTo) return false;
+        if ((c.total_amount||0) < amtMin) return false;
+        if ((c.total_amount||0) > amtMax) return false;
+        return true;
+    });
+
+    sortResults();
+    renderStats(filtered);
+    document.getElementById('results-count').textContent = `מוצגים ${filtered.length} תיקים`;
+}
+
+function clearFilters() {
+    ['f-search','f-date-from','f-date-to','f-amount-min','f-amount-max'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-status').value = '';
+    document.getElementById('f-stage').value = '';
+    applyFilters();
+}
+
+function sortBy(col) {
+    if (sortCol === col) sortDir *= -1;
+    else { sortCol = col; sortDir = -1; }
+    document.querySelectorAll('.sort-arrow').forEach(el => el.textContent = '');
+    const arr = document.querySelector(`.sort-arrow[data-col="${col}"]`);
+    if (arr) arr.textContent = sortDir === -1 ? ' ▼' : ' ▲';
+    sortResults();
+}
+
+function sortResults() {
+    filtered.sort((a, b) => {
+        let va = a[sortCol] ?? '', vb = b[sortCol] ?? '';
+        if (typeof va === 'number') return (va - vb) * sortDir;
+        return String(va).localeCompare(String(vb), 'he') * sortDir;
+    });
+    renderTable();
+}
+
+function renderTable() {
+    const tbody = document.getElementById('cases-tbody');
+    if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="no-results">לא נמצאו תיקים</td></tr>';
+        return;
+    }
+    tbody.innerHTML = '';
+    for (const c of filtered) {
+        const badge = STATUS_BADGE[c.status] || 'badge-active';
+        const outcome = OUTCOME_LABEL[c.outcome || ''] || '—';
+        const outAmt = c.outcome_amount ? Math.round(c.outcome_amount).toLocaleString() + ' ₪' : '—';
+        const created = (c.created_at || '').slice(0, 10);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="font-weight:600; color:var(--primary);">${c.plaintiff_name || '—'}</td>
+            <td>${c.defendant_name || '—'}</td>
+            <td style="font-weight:700;">${Math.round(c.total_amount||0).toLocaleString()} ₪</td>
+            <td><span style="font-size:0.82rem;">${c.stage || '—'}</span></td>
+            <td><span class="badge ${badge}">${STATUS_LABEL[c.status]||c.status}</span></td>
+            <td>${outcome}</td>
+            <td>${outAmt}</td>
+            <td style="color:var(--text-muted); font-size:0.82rem;">${created}</td>
+            <td>
+                <button class="btn btn-primary btn-sm" onclick="openEditModal(${c.id})">עריכה</button>
+            </td>`;
+        tbody.appendChild(tr);
+    }
+}
+
+// ── Edit Modal ──
+function openEditModal(id) {
+    const c = allCases.find(x => x.id === id);
+    if (!c) return;
+    document.getElementById('edit-id').value = id;
+    document.getElementById('edit-modal-title').textContent = `${c.plaintiff_name||'תיק'} נגד ${c.defendant_name||'?'}`;
+    document.getElementById('edit-status').value = c.status || 'active';
+    document.getElementById('edit-outcome').value = c.outcome || '';
+    document.getElementById('edit-outcome-amount').value = c.outcome_amount || '';
+    document.getElementById('edit-stage').value = c.stage || 'קליטה';
+    document.getElementById('edit-deadline').value = c.next_deadline || '';
+    document.getElementById('edit-notes').value = c.notes || '';
+    document.getElementById('edit-modal').classList.add('open');
+}
+
+function closeEditModal() { document.getElementById('edit-modal').classList.remove('open'); }
+
+async function saveEdit() {
+    const id = document.getElementById('edit-id').value;
+    const payload = {
+        status: document.getElementById('edit-status').value,
+        outcome: document.getElementById('edit-outcome').value,
+        outcome_amount: parseFloat(document.getElementById('edit-outcome-amount').value) || null,
+        stage: document.getElementById('edit-stage').value,
+        next_deadline: document.getElementById('edit-deadline').value,
+        notes: document.getElementById('edit-notes').value,
+    };
+    await fetch(`/api/cases/${id}`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+    const c = allCases.find(x => x.id == id);
+    if (c) Object.assign(c, payload);
+    closeEditModal();
+    applyFilters();
+    toast('תיק עודכן');
+}
+
+async function deleteCase() {
+    const id = document.getElementById('edit-id').value;
+    if (!confirm('למחוק את התיק?')) return;
+    await fetch(`/api/cases/${id}`, { method:'DELETE' });
+    allCases = allCases.filter(x => x.id != id);
+    closeEditModal();
+    applyFilters();
+    toast('תיק נמחק');
+}
+
+function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', 2200);
+}
+
+// Live search
+document.getElementById('f-search').addEventListener('input', applyFilters);
+
+loadCases();
+</script>
+</body>
+</html>

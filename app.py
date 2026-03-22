@@ -2765,6 +2765,84 @@ def generate_demand_letter():
     )
 
 
+# ── Case History ─────────────────────────────────────────────────────────────
+
+@app.route("/history")
+def history():
+    if not session.get("authenticated"):
+        return redirect(url_for("login"))
+    return render_template("history.html", stages=KANBAN_STAGES)
+
+
+@app.route("/history/export")
+def history_export():
+    if not session.get("authenticated"):
+        return redirect(url_for("login"))
+
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+
+    with _get_db() as conn:
+        rows = conn.execute("SELECT * FROM cases ORDER BY created_at DESC").fetchall()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "תיקים"
+    ws.sheet_view.rightToLeft = True
+
+    headers = [
+        "מזהה", "תאריך יצירה", "תובע/ת", "נתבע/ת", "תחילת עבודה", "סיום עבודה",
+        "סכום תביעה (₪)", "שלב", "סטטוס", "תוצאה", "סכום שהתקבל (₪)",
+        "השלמת מסמכים (%)", "מועד אחרון", "הערות",
+    ]
+    hdr_fill = PatternFill(start_color="1A365D", end_color="1A365D", fill_type="solid")
+    hdr_font = Font(bold=True, color="FFFFFF", name="David")
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.fill = hdr_fill
+        cell.font = hdr_font
+        cell.alignment = Alignment(horizontal="right")
+
+    status_map = {"active": "פעיל", "won": "ניצחון", "settled": "פשרה", "lost": "הפסד"}
+    outcome_map = {"won": "ניצחון", "settled": "פשרה", "lost": "הפסד", "": "—"}
+
+    for r, row in enumerate(rows, 2):
+        vals = [
+            row["id"],
+            (row["created_at"] or "")[:10],
+            row["plaintiff_name"] or "",
+            row["defendant_name"] or "",
+            row["start_date"] or "",
+            row["end_date"] or "",
+            row["total_amount"] or 0,
+            row["stage"] or "",
+            status_map.get(row["status"] or "active", row["status"] or ""),
+            outcome_map.get(row["outcome"] or "", row["outcome"] or "—"),
+            row["outcome_amount"] or "",
+            row["doc_completion"] or 0,
+            row["next_deadline"] or "",
+            row["notes"] or "",
+        ]
+        for col, val in enumerate(vals, 1):
+            cell = ws.cell(row=r, column=col, value=val)
+            cell.alignment = Alignment(horizontal="right")
+            if r % 2 == 0:
+                cell.fill = PatternFill(start_color="EBF4FF", end_color="EBF4FF", fill_type="solid")
+
+    for col in ws.columns:
+        ws.column_dimensions[col[0].column_letter].width = 18
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=f"תיקים_{date.today().isoformat()}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 # ── Case Dashboard & API ─────────────────────────────────────────────────────
 
 @app.route("/dashboard")
