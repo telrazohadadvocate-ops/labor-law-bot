@@ -1105,6 +1105,29 @@
                 </table>
             </div>
 
+            <!-- Settlement Calculator Panel -->
+            <div class="card" id="settlement-panel" style="display:none;">
+                <h2>מחשבון פשרה</h2>
+                <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.8rem;">
+                    הערכת טווח פשרה מציאותי בהתאם לחוזק התיק (על בסיס שלמות מסמכי הראיות).
+                </p>
+                <div id="settlement-strength-badge" style="margin-bottom:1rem;"></div>
+                <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+                    <thead>
+                        <tr style="background:var(--primary); color:white; text-align:right;">
+                            <th style="padding:0.5rem 0.8rem;">רכיב</th>
+                            <th style="padding:0.5rem 0.8rem;">סכום מלא</th>
+                            <th style="padding:0.5rem 0.8rem;">טווח פשרה צפוי</th>
+                            <th style="padding:0.5rem 0.8rem;">מינימום מומלץ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="settlement-tbody"></tbody>
+                </table>
+                </div>
+                <div id="settlement-chart" style="margin-top:1.2rem;"></div>
+            </div>
+
             <!-- Evidence Checklist Panel -->
             <div class="card" id="evidence-checklist-panel" style="display:none;">
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem; flex-wrap:wrap; gap:0.5rem;">
@@ -1600,8 +1623,9 @@
             showModeBadge('template');
             showPreviewPanel(null);  // Hide AI preview for template mode
 
-            // Show evidence checklist and limitation timeline
+            // Show settlement calculator, evidence checklist, limitation timeline
             renderEvidenceChecklist(result.calculations.claims);
+            renderSettlementPanel(result.calculations.claims);
             renderLimitationPanel(result.calculations.claims);
 
             lastAiResponse = null;
@@ -1791,8 +1815,9 @@
                 showPreviewPanel(null);
             }
 
-            // Show evidence checklist and limitation timeline
+            // Show settlement calculator, evidence checklist, limitation timeline
             renderEvidenceChecklist(result.calculations.claims);
+            renderSettlementPanel(result.calculations.claims);
             renderLimitationPanel(result.calculations.claims);
 
             // Brief delay to show completed progress before switching
@@ -1815,6 +1840,76 @@
             }
             goToStep(4);
         }
+    }
+
+    // ── Settlement Calculator ────────────────────────────────────────────────
+
+    function _settlementStrength() {
+        const all = document.querySelectorAll('#evidence-checklist-body input[type="checkbox"]');
+        const checked = document.querySelectorAll('#evidence-checklist-body input[type="checkbox"]:checked');
+        const pct = all.length > 0 ? checked.length / all.length : 0;
+        if (pct >= 0.8) return { label:'חוזק תיק: חזק — רוב המסמכים קיימים', color:'#2e7d32', min:0.70, max:0.90 };
+        if (pct >= 0.4) return { label:'חוזק תיק: בינוני — חלק מהמסמכים חסרים', color:'#e65100', min:0.40, max:0.60 };
+        return         { label:'חוזק תיק: חלש — מסמכים רבים חסרים', color:'#c62828', min:0.10, max:0.30 };
+    }
+
+    function _barRow(label, value, maxVal, color) {
+        const pct = maxVal > 0 ? Math.max(2, (value / maxVal) * 100) : 2;
+        return `<div style="margin-bottom:0.5rem; direction:rtl;">
+            <div style="display:flex; justify-content:space-between; font-size:0.82rem; margin-bottom:0.2rem;">
+                <span>${label}</span><span style="font-weight:600;">${Math.round(value).toLocaleString()} ₪</span>
+            </div>
+            <div style="background:var(--border); border-radius:4px; height:18px; overflow:hidden;">
+                <div style="background:${color}; width:${pct.toFixed(1)}%; height:100%; border-radius:4px; transition:width 0.6s;"></div>
+            </div></div>`;
+    }
+
+    function renderSettlementPanel(claims) {
+        const panel = document.getElementById('settlement-panel');
+        const tbody = document.getElementById('settlement-tbody');
+        const chart = document.getElementById('settlement-chart');
+        const badge = document.getElementById('settlement-strength-badge');
+        if (!claims) { panel.style.display = 'none'; return; }
+
+        const s = _settlementStrength();
+        badge.innerHTML = `<span style="background:${s.color}; color:white; padding:0.3rem 0.8rem; border-radius:12px; font-size:0.85rem; font-weight:600;">${s.label}</span>`;
+
+        tbody.innerHTML = '';
+        let totalFull = 0, totalLow = 0, totalHigh = 0;
+
+        for (const [key, claim] of Object.entries(claims)) {
+            const full = claim.amount;
+            const low  = Math.round(full * s.min);
+            const high = Math.round(full * s.max);
+            totalFull += full; totalLow += low; totalHigh += high;
+
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid var(--border)';
+            tr.innerHTML = `
+                <td style="padding:0.4rem 0.8rem; direction:rtl;">${claim.name}</td>
+                <td style="padding:0.4rem 0.8rem; font-weight:600;">${Math.round(full).toLocaleString()} ₪</td>
+                <td style="padding:0.4rem 0.8rem; color:${s.color};">${low.toLocaleString()} — ${high.toLocaleString()} ₪</td>
+                <td style="padding:0.4rem 0.8rem; font-weight:600; color:var(--success);">${low.toLocaleString()} ₪</td>`;
+            tbody.appendChild(tr);
+        }
+
+        // Total row
+        const tot = document.createElement('tr');
+        tot.style.cssText = 'background:var(--bg); font-weight:bold; border-top:2px solid var(--primary);';
+        tot.innerHTML = `
+            <td style="padding:0.5rem 0.8rem;">סה"כ</td>
+            <td style="padding:0.5rem 0.8rem;">${Math.round(totalFull).toLocaleString()} ₪</td>
+            <td style="padding:0.5rem 0.8rem; color:${s.color};">${totalLow.toLocaleString()} — ${totalHigh.toLocaleString()} ₪</td>
+            <td style="padding:0.5rem 0.8rem; color:var(--success);">${totalLow.toLocaleString()} ₪</td>`;
+        tbody.appendChild(tot);
+
+        // Bar chart
+        chart.innerHTML = `<h3 style="font-size:0.95rem; color:var(--primary); margin-bottom:0.6rem;">השוואה גרפית</h3>
+            ${_barRow('סכום תביעה מלא', totalFull, totalFull, '#1a365d')}
+            ${_barRow('צפי פשרה מקסימלי', totalHigh, totalFull, s.color)}
+            ${_barRow('מינימום מומלץ', totalLow, totalFull, '#4caf50')}`;
+
+        panel.style.display = 'block';
     }
 
     // ── Evidence Checklist ───────────────────────────────────────────────────
