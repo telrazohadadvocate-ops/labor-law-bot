@@ -7,7 +7,7 @@ import json
 import math
 import logging
 import traceback
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
 from flask import Flask, render_template, request, jsonify, send_file, session, redirect, url_for
 from docx import Document
@@ -403,6 +403,63 @@ def safe_int(val, default=0):
         return default
 
 
+# ── Statute of Limitations ───────────────────────────────────────────────────
+
+_LIMITATION_YEARS = {
+    "severance": 7,
+    "prior_notice": 7,
+    "unpaid_salary": 7,
+    "overtime": 7,
+    "pension": 7,
+    "holidays": 7,
+    "recuperation": 7,
+    "emotional": 7,
+    "deductions": 7,
+    "vacation": 3,
+}
+_LIMITATION_DAYS = {
+    "salary_delay": 60,
+}
+
+
+def _compute_limitation(claim_key, end_date):
+    """Return limitation deadline and colour status for a claim.
+
+    Returns dict with keys: deadline (ISO str), days_remaining (int),
+    status ('green'|'yellow'|'red'|'gray'), period_label (str).
+    """
+    today = date.today()
+    if claim_key in _LIMITATION_DAYS:
+        deadline = end_date + timedelta(days=_LIMITATION_DAYS[claim_key])
+        period_label = f"{_LIMITATION_DAYS[claim_key]} ימים"
+    elif claim_key in _LIMITATION_YEARS:
+        years = _LIMITATION_YEARS[claim_key]
+        try:
+            deadline = end_date.replace(year=end_date.year + years)
+        except ValueError:
+            deadline = end_date.replace(year=end_date.year + years, day=28)
+        period_label = f"{years} שנים"
+    else:
+        return None
+
+    days_remaining = (deadline - today).days
+    if days_remaining < 0:
+        status = "gray"
+    elif days_remaining <= 60:
+        status = "red"
+    elif days_remaining <= 180:
+        status = "yellow"
+    else:
+        status = "green"
+
+    return {
+        "deadline": deadline.isoformat(),
+        "days_remaining": days_remaining,
+        "status": status,
+        "period_label": period_label,
+    }
+
+
 def calculate_all_claims(data):
     """Master calculation function for all claim components."""
     start_str = (data.get("start_date") or "").strip()
@@ -609,6 +666,26 @@ def calculate_all_claims(data):
 
     # Total
     results["total"] = round(sum(c["amount"] for c in results["claims"].values()), 2)
+
+    # ── Statute of Limitations ──────────────────────────────────────────────
+    limitation_warnings = []
+    for key, claim in results["claims"].items():
+        lim = _compute_limitation(key, end)
+        if lim:
+            claim["limitation"] = lim
+            if lim["status"] == "gray":
+                limitation_warnings.append(
+                    f"{claim['name']}: פג תוקף ההתיישנות ב-{lim['deadline']}"
+                )
+            elif lim["status"] == "red":
+                limitation_warnings.append(
+                    f"{claim['name']}: {lim['days_remaining']} ימים בלבד עד להתיישנות ({lim['deadline']})"
+                )
+            elif lim["status"] == "yellow":
+                limitation_warnings.append(
+                    f"{claim['name']}: פחות מ-6 חודשים עד להתיישנות ({lim['deadline']})"
+                )
+    results["limitation_warnings"] = limitation_warnings
     return results
 
 
@@ -1063,6 +1140,14 @@ def generate_claim_text(data, calculations):
     sections.append("")
     sections.append(f"סה\"כ סכום התביעה: {total:,.0f} ₪ קרן (לא כולל הצמדה וריבית, שכ\"ט עו\"ד והוצאות)")
     sections.append("")
+
+    # ── Limitation warnings ──────────────────────────────────────────────────
+    limitation_warnings = calculations.get("limitation_warnings", [])
+    if limitation_warnings:
+        sections.append("⚠ אזהרות התיישנות")
+        for w in limitation_warnings:
+            sections.append(f"• {w}")
+        sections.append("")
 
     sections.append(
         f"לאור ההפרות החמורות של {g['his_rights']} של {pronoun} המתוארות בהרחבה בכתב תביעה זה, "
