@@ -706,6 +706,14 @@
             </div>
         </div>
 
+        <!-- Additional Defendants -->
+        <div class="card" id="additional_defendants_card">
+            <h2>נתבעים נוספים <span style="font-size:0.8rem;font-weight:400;color:var(--text-muted);">(אופציונלי)</span></h2>
+            <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:0.8rem;">הוסף חברת כוח אדם, חברת אם, נושאי משרה, או נתבעים נוספים אחרים.</p>
+            <div id="additional_defendants_container"></div>
+            <button type="button" class="btn" style="background:var(--border);color:var(--text);font-size:0.88rem;padding:0.5rem 1rem;margin-top:0.5rem;" onclick="addDefendant()">+ הוסף נתבע נוסף</button>
+        </div>
+
         <div class="btn-row">
             <button class="btn btn-primary" onclick="goToStep(2)">המשך לשלב הבא</button>
         </div>
@@ -1474,6 +1482,77 @@
 
     // ── End Step 0 functions ───────────────────────────────────────
 
+    // ── Multi-Defendant ──────────────────────────────────────────────────────
+
+    const DEF_TYPE_LABELS = {
+        manpower: 'חברת כוח אדם',
+        parent:   'חברת אם',
+        officer:  'נושא משרה',
+        other:    'נתבע אחר',
+    };
+
+    let _defIdx = 0;
+
+    function addDefendant(data) {
+        const idx = _defIdx++;
+        const container = document.getElementById('additional_defendants_container');
+        const div = document.createElement('div');
+        div.className = 'add-defendant-row';
+        div.id = `ad_row_${idx}`;
+        div.style.cssText = 'border:1px solid var(--border);border-radius:8px;padding:0.8rem;margin-bottom:0.6rem;background:#fafbfc;';
+        div.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                <strong style="font-size:0.9rem;color:var(--primary);">נתבע נוסף</strong>
+                <button type="button" onclick="removeDefendant(${idx})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1.1rem;">✕</button>
+            </div>
+            <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr;">
+                <div class="form-group">
+                    <label>סוג נתבע</label>
+                    <select class="ad-type">
+                        <option value="manpower">חברת כוח אדם</option>
+                        <option value="parent">חברת אם</option>
+                        <option value="officer">נושא משרה</option>
+                        <option value="other">אחר</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>שם</label>
+                    <input type="text" class="ad-name" placeholder="שם הנתבע/ת הנוסף/ת">
+                </div>
+                <div class="form-group">
+                    <label>ח.פ. / ע.מ. / ת.ז.</label>
+                    <input type="text" class="ad-id" placeholder="מספר רישום">
+                </div>
+            </div>`;
+        if (data) {
+            div.querySelector('.ad-type').value = data.type || 'other';
+            div.querySelector('.ad-name').value = data.name || '';
+            div.querySelector('.ad-id').value = data.id || '';
+        }
+        container.appendChild(div);
+    }
+
+    function removeDefendant(idx) {
+        const el = document.getElementById(`ad_row_${idx}`);
+        if (el) el.remove();
+    }
+
+    function collectAdditionalDefendants() {
+        const rows = document.querySelectorAll('.add-defendant-row');
+        const result = [];
+        rows.forEach(row => {
+            const name = row.querySelector('.ad-name').value.trim();
+            if (name) {
+                result.push({
+                    type: row.querySelector('.ad-type').value,
+                    name,
+                    id: row.querySelector('.ad-id').value.trim(),
+                });
+            }
+        });
+        return result;
+    }
+
     // ── Section 14 ───────────────────────────────────────────────────────────
 
     function toggleSection14() {
@@ -1613,6 +1692,7 @@
                 data[f] = el.value;
             }
         }
+        data.additional_defendants = collectAdditionalDefendants();
         return data;
     }
 

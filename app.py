@@ -932,6 +932,32 @@ def generate_claim_text(data, calculations):
         f"{defendant_desc} "
         f"ומי ש{g['was']} {g['employer_of']} של {pronoun} בתקופה הרלוונטית לכתב התביעה (להלן: \"הנתבעת\")."
     )
+
+    # Additional defendants
+    add_defs = data.get("additional_defendants", [])
+    if isinstance(add_defs, str):
+        try:
+            add_defs = json.loads(add_defs)
+        except Exception:
+            add_defs = []
+    _DEF_TYPE_LABELS = {
+        "manpower": "חברת כוח אדם",
+        "parent": "חברת אם",
+        "officer": "נושא משרה",
+        "other": "נתבע נוסף",
+    }
+    for i, d in enumerate(add_defs, start=2):
+        d_name = (d.get("name") or "").strip()
+        if not d_name:
+            continue
+        d_type = _DEF_TYPE_LABELS.get(d.get("type", "other"), "נתבע נוסף")
+        d_id = (d.get("id") or "").strip()
+        id_str = f", ח.פ./ע.מ./ת.ז. {d_id}" if d_id else ""
+        sections.append(
+            f"הנתבע/ת {i}, {d_type} {d_name}{id_str}, "
+            f"אשר {g['employed']} גם כן את {pronoun} בתקופה הרלוונטית לכתב התביעה (להלן: \"הנתבע/ת {i}\")."
+        )
+
     sections.append("")
 
     # ── Background ──
