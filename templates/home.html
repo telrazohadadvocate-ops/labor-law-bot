@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>בית | לוין תלרז</title>
+    <style>
+        :root {
+            --primary: #1a365d; --primary-light: #2c5282; --accent: #c6a04a;
+            --bg: #f0f4f8; --card: #ffffff; --text: #1a202c;
+            --text-muted: #718096; --border: #e2e8f0;
+            --success: #38a169; --danger: #e53e3e; --warn: #d69e2e;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Segoe UI','David',Arial,sans-serif; background:var(--bg); color:var(--text); direction:rtl; min-height:100vh; }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            color:white; padding:1rem 2rem;
+            display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;
+        }
+        .header h1 { font-size:1.4rem; }
+        .header-links { display:flex; gap:0.7rem; flex-wrap:wrap; }
+        .header-links a {
+            color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;
+            padding:0.3rem 0.8rem; border:1px solid rgba(255,255,255,0.4); border-radius:6px;
+            transition:all 0.2s;
+        }
+        .header-links a:hover { background:rgba(255,255,255,0.15); color:white; }
+        .header-links a.active { background:rgba(255,255,255,0.2); font-weight:600; }
+
+        .container { max-width:1200px; margin:1.5rem auto; padding:0 1.5rem; }
+
+        /* Stats grid */
+        .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:1rem; margin-bottom:1.5rem; }
+        .stat-card {
+            background:var(--card); border-radius:12px; padding:1.2rem 1.4rem;
+            box-shadow:0 2px 8px rgba(0,0,0,0.07); text-align:center;
+            border-top:4px solid var(--primary);
+        }
+        .stat-card.green { border-top-color:var(--success); }
+        .stat-card.gold { border-top-color:var(--accent); }
+        .stat-card.warn { border-top-color:var(--warn); }
+        .stat-number { font-size:2rem; font-weight:700; color:var(--primary); line-height:1.1; }
+        .stat-card.green .stat-number { color:var(--success); }
+        .stat-card.gold .stat-number { color:var(--accent); }
+        .stat-card.warn .stat-number { color:var(--warn); }
+        .stat-label { font-size:0.82rem; color:var(--text-muted); margin-top:0.3rem; }
+
+        /* Two column layout */
+        .row2 { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem; }
+        @media(max-width:700px){ .row2 { grid-template-columns:1fr; } }
+
+        .card { background:var(--card); border-radius:12px; padding:1.2rem 1.4rem; box-shadow:0 2px 8px rgba(0,0,0,0.07); }
+        .card h2 { color:var(--primary); font-size:1.05rem; margin-bottom:1rem; padding-bottom:0.5rem; border-bottom:2px solid var(--border); display:flex; align-items:center; gap:0.5rem; }
+
+        /* Quick actions */
+        .actions-grid { display:grid; grid-template-columns:1fr 1fr; gap:0.7rem; }
+        .action-btn {
+            display:flex; align-items:center; gap:0.7rem;
+            padding:0.8rem 1rem; border-radius:10px; text-decoration:none;
+            font-size:0.92rem; font-weight:600; transition:all 0.2s;
+            border:2px solid transparent;
+        }
+        .action-btn:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,0.12); }
+        .action-btn.primary { background:var(--primary); color:white; }
+        .action-btn.accent { background:var(--accent); color:white; }
+        .action-btn.outline { background:white; color:var(--primary); border-color:var(--border); }
+        .action-btn .icon { font-size:1.3rem; }
+
+        /* Deadlines */
+        .deadline-item {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:0.5rem 0; border-bottom:1px solid var(--border); font-size:0.88rem;
+        }
+        .deadline-item:last-child { border-bottom:none; }
+        .deadline-days {
+            font-weight:700; padding:0.2rem 0.6rem; border-radius:6px; font-size:0.82rem;
+        }
+        .days-urgent { background:#ffebee; color:var(--danger); }
+        .days-soon   { background:#fff9c4; color:var(--warn); }
+        .days-ok     { background:#e8f5e9; color:var(--success); }
+        .deadline-name { font-weight:600; color:var(--primary); }
+        .deadline-vs   { font-size:0.78rem; color:var(--text-muted); }
+
+        /* Recent activity */
+        .recent-item {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:0.5rem 0; border-bottom:1px solid var(--border); font-size:0.87rem;
+        }
+        .recent-item:last-child { border-bottom:none; }
+        .stage-pill {
+            font-size:0.75rem; font-weight:600; padding:0.15rem 0.6rem;
+            border-radius:10px; background:#ebf4ff; color:var(--primary);
+            white-space:nowrap;
+        }
+        .amount-tag { color:var(--success); font-weight:600; font-size:0.82rem; }
+
+        /* Stage bar */
+        .stage-bar-row { display:flex; align-items:center; gap:0.6rem; margin-bottom:0.4rem; font-size:0.84rem; }
+        .stage-bar-track { flex:1; background:var(--border); border-radius:4px; height:8px; overflow:hidden; }
+        .stage-bar-fill { height:100%; background:linear-gradient(90deg,var(--primary),var(--accent)); border-radius:4px; }
+        .stage-bar-label { width:90px; color:var(--text-muted); font-size:0.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .stage-bar-count { width:20px; text-align:left; color:var(--text); font-weight:600; }
+
+        .empty-note { color:var(--text-muted); font-size:0.88rem; text-align:center; padding:1rem 0; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>🏛 משרד לוין תלרז — עורכי דין</h1>
+    <div class="header-links">
+        <a href="/home" class="active">🏠 בית</a>
+        <a href="/">✍ כתב תביעה חדש</a>
+        <a href="/dashboard">📋 לוח קנבן</a>
+        <a href="/history">📁 היסטוריה</a>
+        <a href="/logout">יציאה</a>
+    </div>
+</div>
+
+<div class="container">
+
+    <!-- Stats -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-number">{{ total }}</div>
+            <div class="stat-label">סה"כ תיקים</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ active }}</div>
+            <div class="stat-label">תיקים פעילים</div>
+        </div>
+        <div class="stat-card green">
+            <div class="stat-number">{{ won + settled }}</div>
+            <div class="stat-label">ניצחונות / פשרות</div>
+        </div>
+        <div class="stat-card gold">
+            <div class="stat-number">{{ "{:,.0f}".format(total_amount) }} ₪</div>
+            <div class="stat-label">סכום תביעות כולל</div>
+        </div>
+        <div class="stat-card warn">
+            <div class="stat-number">{{ deadline_cases|length }}</div>
+            <div class="stat-label">מועדים ב-30 הימים הקרובים</div>
+        </div>
+    </div>
+
+    <div class="row2">
+
+        <!-- Quick Actions -->
+        <div class="card">
+            <h2>⚡ פעולות מהירות</h2>
+            <div class="actions-grid">
+                <a href="/" class="action-btn primary">
+                    <span class="icon">✍</span> כתב תביעה חדש
+                </a>
+                <a href="/dashboard" class="action-btn accent">
+                    <span class="icon">📋</span> לוח קנבן
+                </a>
+                <a href="/history" class="action-btn outline">
+                    <span class="icon">📁</span> היסטוריית תיקים
+                </a>
+                <a href="/history?export=1" class="action-btn outline">
+                    <span class="icon">📊</span> ייצוא Excel
+                </a>
+            </div>
+        </div>
+
+        <!-- Upcoming Deadlines -->
+        <div class="card">
+            <h2>⏰ מועדים קרובים</h2>
+            {% if deadline_cases %}
+                {% for c in deadline_cases[:6] %}
+                <div class="deadline-item">
+                    <div>
+                        <div class="deadline-name">{{ c.plaintiff_name or '—' }}</div>
+                        <div class="deadline-vs" style="margin-top:1px;">נגד {{ c.defendant_name or '—' }} | {{ c.next_deadline }}</div>
+                    </div>
+                    <span class="deadline-days {% if c.days_left <= 7 %}days-urgent{% elif c.days_left <= 14 %}days-soon{% else %}days-ok{% endif %}">
+                        {{ c.days_left }} ימים
+                    </span>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="empty-note">אין מועדים קרובים ב-30 הימים הקרובים</p>
+            {% endif %}
+        </div>
+
+    </div>
+
+    <div class="row2">
+
+        <!-- Stage Breakdown -->
+        <div class="card">
+            <h2>📊 פילוח שלבים (תיקים פעילים)</h2>
+            {% if active > 0 %}
+                {% for stage in stages %}
+                    {% set cnt = stage_counts.get(stage, 0) %}
+                    {% if cnt > 0 %}
+                    <div class="stage-bar-row">
+                        <div class="stage-bar-label" title="{{ stage }}">{{ stage }}</div>
+                        <div class="stage-bar-track">
+                            <div class="stage-bar-fill" style="width:{{ (cnt / active * 100)|int }}%;"></div>
+                        </div>
+                        <div class="stage-bar-count">{{ cnt }}</div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                <p class="empty-note">אין תיקים פעילים</p>
+            {% endif %}
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="card">
+            <h2>🕐 פעילות אחרונה</h2>
+            {% if recent %}
+                {% for c in recent %}
+                <div class="recent-item">
+                    <div>
+                        <div style="font-weight:600;color:var(--primary);">{{ c.plaintiff_name or '—' }}</div>
+                        <div style="font-size:0.78rem;color:var(--text-muted);">{{ (c.updated_at or '')[:10] }} | נגד {{ c.defendant_name or '—' }}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:0.5rem;">
+                        {% if c.total_amount %}
+                        <span class="amount-tag">{{ "{:,.0f}".format(c.total_amount) }} ₪</span>
+                        {% endif %}
+                        <span class="stage-pill">{{ c.stage or 'קליטה' }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="empty-note">אין תיקים עדיין</p>
+            {% endif %}
+        </div>
+
+    </div>
+
+</div>
+</body>
+</html>

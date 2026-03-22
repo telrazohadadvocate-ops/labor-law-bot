@@ -2195,7 +2195,7 @@ def login():
         if password == APP_PASSWORD:
             session.permanent = True
             session["authenticated"] = True
-            return redirect(url_for("index"))
+            return redirect(url_for("home"))
         else:
             error = "סיסמה שגויה, נסה שוב"
     return render_template("login.html", error=error)
@@ -2205,6 +2205,56 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/home")
+def home():
+    if not session.get("authenticated"):
+        return redirect(url_for("login"))
+    today_str = date.today().isoformat()
+    with _get_db() as conn:
+        all_cases = conn.execute("SELECT * FROM cases ORDER BY updated_at DESC").fetchall()
+    cases = [dict(c) for c in all_cases]
+
+    total = len(cases)
+    active = sum(1 for c in cases if c.get("status") == "active")
+    won = sum(1 for c in cases if c.get("status") == "won")
+    settled = sum(1 for c in cases if c.get("status") == "settled")
+    total_amount = sum(c.get("total_amount") or 0 for c in cases)
+    won_amount = sum(c.get("outcome_amount") or 0 for c in cases if c.get("status") in ("won", "settled"))
+
+    # Stage breakdown
+    from collections import Counter
+    stage_counts = Counter(c.get("stage") or "קליטה" for c in cases if c.get("status") == "active")
+
+    # Upcoming deadlines (next 30 days)
+    from datetime import timedelta
+    deadline_cases = []
+    for c in cases:
+        dl = c.get("next_deadline")
+        if dl and dl >= today_str:
+            days_left = (date.fromisoformat(dl) - date.today()).days
+            if days_left <= 30:
+                deadline_cases.append({**c, "days_left": days_left})
+    deadline_cases.sort(key=lambda x: x["next_deadline"])
+
+    # Recent activity — last 6 updated cases
+    recent = cases[:6]
+
+    return render_template(
+        "home.html",
+        today_str=today_str,
+        total=total,
+        active=active,
+        won=won,
+        settled=settled,
+        total_amount=total_amount,
+        won_amount=won_amount,
+        stage_counts=dict(stage_counts),
+        deadline_cases=deadline_cases,
+        recent=recent,
+        stages=KANBAN_STAGES,
+    )
 
 
 @app.route("/")
