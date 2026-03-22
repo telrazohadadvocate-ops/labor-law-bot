@@ -6,6 +6,7 @@ Generates Israeli labor law claims (כתבי תביעה) based on client intake 
 import json
 import math
 import logging
+import secrets
 import sqlite3
 import traceback
 from datetime import datetime, date, timedelta
@@ -103,6 +104,7 @@ def _init_db():
             ("stage", "TEXT DEFAULT 'קליטה'"),
             ("status", "TEXT DEFAULT 'active'"),
             ("claim_types", "TEXT"),
+            ("client_token", "TEXT"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE cases ADD COLUMN {col} {defn}")
@@ -2954,6 +2956,69 @@ def api_case_delete(case_id):
         conn.execute("DELETE FROM cases WHERE id=?", (case_id,))
         conn.commit()
     return jsonify({"success": True})
+
+
+# ── Client Portal ────────────────────────────────────────────────────────────
+
+@app.route("/api/cases/<int:case_id>/client-token", methods=["POST"])
+def generate_client_token(case_id):
+    if not session.get("authenticated"):
+        return jsonify({"error": "unauthorized"}), 401
+    token = secrets.token_urlsafe(32)
+    now = datetime.utcnow().isoformat()
+    with _get_db() as conn:
+        row = conn.execute("SELECT id FROM cases WHERE id=?", (case_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        conn.execute("UPDATE cases SET client_token=?, updated_at=? WHERE id=?", (token, now, case_id))
+        conn.commit()
+    return jsonify({"token": token, "url": f"/client/{token}"})
+
+
+@app.route("/client/<token>")
+def client_portal(token):
+    """Public client-facing portal — secured by token only, no login required."""
+    with _get_db() as conn:
+        row = conn.execute("SELECT * FROM cases WHERE client_token=?", (token,)).fetchone()
+    if not row:
+        return render_template("client_portal.html", error=True), 404
+
+    case = dict(row)
+    try:
+        claim_types = json.loads(case.get("claim_types") or "[]")
+    except Exception:
+        claim_types = []
+
+    stage_index = KANBAN_STAGES.index(case["stage"]) if case.get("stage") in KANBAN_STAGES else 0
+    stage_pct = round((stage_index + 1) / len(KANBAN_STAGES) * 100)
+
+    # Next steps per stage
+    NEXT_STEPS = {
+        "קליטה": ["המשרד קיבל את פרטי תיקך", "נא להעביר מסמכים נדרשים"],
+        "איסוף מסמכים": ["אנו אוספים את מסמכי התיק", "נא לבדוק רשימת המסמכים הנדרשים"],
+        "ניתוח ובדיקה": ["עורך הדין בוחן את התיק", "תיקצור ישלח בקרוב"],
+        "מכתב התראה": ["נשלח מכתב התראה למעסיק", "ממתינים לתגובה תוך 14 יום"],
+        "משא ומתן": ["מתנהלים מגעים עם הצד השני", "נעדכן אותך בהתפתחויות"],
+        "הכנה להגשה": ["מכינים את כתב התביעה להגשה", "יש לחתום על ייפוי כוח"],
+        "הוגש": ["התביעה הוגשה לבית הדין לעבודה", "ממתינים לזימון לדיון"],
+        "דיון נקבע": ["נקבע מועד דיון", "נודיעך על המועד ועל הכנות נדרשות"],
+        "גישור/פשרה": ["מנהלים הליך גישור/פשרה", "נעדכן אותך בהצעות"],
+        "סגור": ["התיק הסתיים", "תודה על האמון"],
+    }
+    next_steps = NEXT_STEPS.get(case.get("stage", "קליטה"), ["אנו בטיפול"])
+
+    return render_template(
+        "client_portal.html",
+        case=case,
+        claim_types=claim_types,
+        stages=KANBAN_STAGES,
+        stage_index=stage_index,
+        stage_pct=stage_pct,
+        next_steps=next_steps,
+        today_str=date.today().isoformat(),
+        token=token,
+        error=False,
+    )
 
 
 if __name__ == "__main__":

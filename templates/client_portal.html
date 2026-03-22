@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>פורטל לקוח | לוין תלרז</title>
+    <style>
+        :root {
+            --primary: #1a365d; --accent: #c6a04a;
+            --bg: #f0f4f8; --card: #ffffff;
+            --text: #1a202c; --text-muted: #718096; --border: #e2e8f0;
+            --success: #38a169; --danger: #e53e3e;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Segoe UI','David',Arial,sans-serif; background:var(--bg); color:var(--text); direction:rtl; min-height:100vh; }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary), #2c5282);
+            color:white; padding:1.2rem 2rem; text-align:center;
+        }
+        .header h1 { font-size:1.5rem; margin-bottom:0.2rem; }
+        .header .sub { font-size:0.9rem; color:rgba(255,255,255,0.8); }
+
+        .container { max-width:720px; margin:1.5rem auto; padding:0 1rem; }
+
+        .card {
+            background:var(--card); border-radius:12px; padding:1.3rem 1.5rem;
+            box-shadow:0 2px 8px rgba(0,0,0,0.07); margin-bottom:1.2rem;
+        }
+        .card h2 { color:var(--primary); font-size:1.1rem; margin-bottom:1rem; padding-bottom:0.5rem; border-bottom:2px solid var(--border); }
+
+        /* Progress bar */
+        .stage-label { font-size:0.85rem; color:var(--text-muted); margin-bottom:0.4rem; }
+        .progress-track { background:var(--border); border-radius:8px; height:14px; overflow:hidden; margin-bottom:0.5rem; }
+        .progress-fill { height:100%; border-radius:8px; background:linear-gradient(90deg, var(--primary), var(--accent)); transition:width 0.8s; }
+        .stages-mini { display:flex; justify-content:space-between; margin-top:0.3rem; }
+        .stages-mini span { font-size:0.68rem; color:var(--text-muted); writing-mode:vertical-rl; transform:rotate(180deg); max-height:48px; overflow:hidden; }
+        .stages-mini span.done { color:var(--primary); font-weight:600; }
+        .stages-mini span.current { color:var(--accent); font-weight:700; }
+
+        .current-stage-badge {
+            display:inline-block; background:var(--primary); color:white;
+            padding:0.3rem 1rem; border-radius:20px; font-size:0.88rem; font-weight:600;
+            margin-top:0.5rem;
+        }
+
+        /* Next steps */
+        .steps-list { list-style:none; }
+        .steps-list li { display:flex; align-items:flex-start; gap:0.7rem; padding:0.5rem 0; border-bottom:1px solid var(--border); font-size:0.92rem; }
+        .steps-list li:last-child { border-bottom:none; }
+        .step-icon { font-size:1.1rem; flex-shrink:0; margin-top:0.05rem; }
+
+        /* Deadline */
+        .deadline-box { background:#fff9c4; border-right:4px solid #f6c90e; border-radius:8px; padding:0.7rem 1rem; font-size:0.9rem; }
+        .deadline-expired { background:#ffebee; border-right-color: var(--danger); }
+
+        /* Evidence checklist */
+        .section-title { font-weight:700; color:var(--primary); margin:0.8rem 0 0.4rem; font-size:0.9rem; border-bottom:1px solid var(--border); padding-bottom:0.25rem; }
+        .doc-item { display:flex; align-items:center; gap:0.6rem; padding:0.35rem 0; font-size:0.88rem; }
+        .doc-status { width:18px; height:18px; border-radius:50%; flex-shrink:0; }
+        .doc-needed { background:#e2e8f0; }
+        .doc-hint { font-size:0.78rem; color:var(--text-muted); margin-right:0.5rem; }
+
+        /* Share */
+        .share-row { display:flex; gap:0.6rem; flex-wrap:wrap; margin-top:0.5rem; }
+        .share-btn { padding:0.5rem 1rem; border-radius:8px; border:none; cursor:pointer; font-size:0.9rem; font-weight:600; text-decoration:none; display:inline-block; }
+        .share-wa { background:#25d366; color:white; }
+        .share-email { background:#0072c6; color:white; }
+        .share-copy { background:var(--border); color:var(--text); }
+
+        .error-box { text-align:center; padding:3rem 1rem; color:var(--text-muted); }
+        .error-box h2 { color:var(--danger); font-size:1.5rem; margin-bottom:0.5rem; }
+        .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; }
+        .info-item { font-size:0.88rem; }
+        .info-item .label { color:var(--text-muted); font-size:0.78rem; }
+        .info-item .value { font-weight:600; }
+        @media(max-width:480px) { .info-grid { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>🏛 משרד לוין תלרז — עורכי דין</h1>
+    <div class="sub">פורטל מעקב תיק — מידע אישי ואינו מיועד להעברה לצד שלישי</div>
+</div>
+
+<div class="container">
+
+{% if error %}
+<div class="card error-box">
+    <h2>קישור לא תקין</h2>
+    <p>הקישור שבו השתמשת אינו תקין או שפג תוקפו.</p>
+    <p style="margin-top:0.5rem; font-size:0.85rem;">אנא פנה/י למשרד לקבלת קישור חדש.</p>
+</div>
+
+{% else %}
+
+<!-- Case Info -->
+<div class="card">
+    <h2>פרטי תיק</h2>
+    <div class="info-grid">
+        <div class="info-item"><div class="label">שם</div><div class="value">{{ case.plaintiff_name or '—' }}</div></div>
+        <div class="info-item"><div class="label">נגד</div><div class="value">{{ case.defendant_name or '—' }}</div></div>
+        <div class="info-item"><div class="label">תאריך פתיחת תיק</div><div class="value">{{ (case.created_at or '')[:10] }}</div></div>
+        <div class="info-item"><div class="label">שלב נוכחי</div><div class="value">{{ case.stage or 'קליטה' }}</div></div>
+    </div>
+</div>
+
+<!-- Progress -->
+<div class="card">
+    <h2>מצב התיק</h2>
+    <div class="stage-label">התקדמות: {{ stage_pct }}% — שלב {{ stage_index + 1 }} מתוך {{ stages|length }}</div>
+    <div class="progress-track">
+        <div class="progress-fill" style="width: {{ stage_pct }}%;"></div>
+    </div>
+    <div class="stages-mini">
+        {% for s in stages %}
+        <span class="{% if loop.index0 < stage_index %}done{% elif loop.index0 == stage_index %}current{% endif %}">{{ s }}</span>
+        {% endfor %}
+    </div>
+    <div><span class="current-stage-badge">📍 {{ case.stage or 'קליטה' }}</span></div>
+</div>
+
+<!-- Deadline -->
+{% if case.next_deadline %}
+<div class="card">
+    <h2>⏰ מועד חשוב</h2>
+    {% set dl_date = case.next_deadline %}
+    <div class="deadline-box {% if dl_date < today_str %}deadline-expired{% endif %}">
+        {% if dl_date < today_str %}
+        ⚠ מועד עבר: {{ dl_date }}. אנא צרו קשר עם המשרד בדחיפות.
+        {% else %}
+        מועד אחרון: {{ dl_date }}. עורך הדין עוקב אחר התיק.
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Next Steps -->
+<div class="card">
+    <h2>השלבים הקרובים</h2>
+    <ul class="steps-list">
+        {% for step in next_steps %}
+        <li><span class="step-icon">{{ '✓' if loop.first else '›' }}</span> {{ step }}</li>
+        {% endfor %}
+    </ul>
+</div>
+
+<!-- Documents Needed -->
+{% if claim_types %}
+<div class="card">
+    <h2>מסמכים נדרשים לתיק</h2>
+    <p style="font-size:0.83rem; color:var(--text-muted); margin-bottom:0.6rem;">
+        אנא הכין/י את המסמכים הבאים ושלח/י אותם למשרד בהקדם האפשרי.
+    </p>
+
+    {% set evidence_map = {
+        'severance':     ['מכתב פיטורים', 'טופס 161', 'אישור קופת פנסיה / גמל', '12 תלושי שכר אחרונים', 'חוזה עבודה'],
+        'prior_notice':  ['מכתב פיטורים / התפטרות', 'תלוש שכר חודש הסיום'],
+        'unpaid_salary': ['תלושי שכר', 'תדפיסי חשבון בנק', 'תכתובות על שכר שלא שולם'],
+        'overtime':      ['דוחות נוכחות', 'רישומי שעון', 'תלושי שכר עם שעות נוספות'],
+        'pension':       ['דוח קופת פנסיה', 'תלושים עם הפרשות לפנסיה'],
+        'vacation':      ['תלושי שכר עם יתרת חופשה', 'יומן היעדרויות'],
+        'holidays':      ['תלושי שכר לתקופת החגים'],
+        'recuperation':  ['תלושי שכר עם דמי הבראה'],
+        'salary_delay':  ['תלושי שכר עם תאריכי תשלום', 'תדפיסי חשבון בנק'],
+    } %}
+
+    {% set claim_labels = {
+        'severance':'פיצויי פיטורים', 'prior_notice':'הודעה מוקדמת',
+        'unpaid_salary':'שכר שלא שולם', 'overtime':'שעות נוספות',
+        'pension':'פנסיה', 'vacation':'חופשה', 'holidays':'דמי חגים',
+        'recuperation':'הבראה', 'salary_delay':'הלנת שכר',
+    } %}
+
+    {% for ct in claim_types %}
+        {% if ct in evidence_map %}
+        <div class="section-title">{{ claim_labels.get(ct, ct) }}</div>
+        {% for doc in evidence_map[ct] %}
+        <div class="doc-item">
+            <div class="doc-status doc-needed"></div>
+            <span>{{ doc }}</span>
+        </div>
+        {% endfor %}
+        {% endif %}
+    {% endfor %}
+
+    <p style="margin-top:1rem; font-size:0.82rem; color:var(--text-muted);">
+        ניתן לשלוח מסמכים סרוקים / צילומי מסמך ישירות למשרד בוואטסאפ או באימייל.
+    </p>
+</div>
+{% endif %}
+
+<!-- Completion % -->
+<div class="card">
+    <h2>שלמות תיק</h2>
+    <div class="stage-label">{{ case.doc_completion or 0 }}% מסמכים שהועברו</div>
+    <div class="progress-track" style="height:10px;">
+        <div class="progress-fill" style="width:{{ case.doc_completion or 0 }}%; background:linear-gradient(90deg,var(--success),#68d391);"></div>
+    </div>
+    {% if (case.doc_completion or 0) < 50 %}
+    <p style="font-size:0.83rem; color:#e53e3e; margin-top:0.5rem;">⚠ נדרשים עוד מסמכים לקידום התיק.</p>
+    {% elif (case.doc_completion or 0) < 80 %}
+    <p style="font-size:0.83rem; color:#d69e2e; margin-top:0.5rem;">חלק מהמסמכים חסרים — אנא השלם/י.</p>
+    {% else %}
+    <p style="font-size:0.83rem; color:var(--success); margin-top:0.5rem;">✓ שלמות מסמכים טובה.</p>
+    {% endif %}
+</div>
+
+<!-- Contact -->
+<div class="card" style="text-align:center; background:linear-gradient(135deg,var(--primary),#2c5282); color:white;">
+    <h2 style="color:white; border-bottom-color:rgba(255,255,255,0.2);">📞 יצירת קשר עם המשרד</h2>
+    <p style="font-size:0.9rem; margin-bottom:0.8rem; color:rgba(255,255,255,0.85);">לכל שאלה בנוגע לתיק שלך</p>
+    <p style="font-weight:700; font-size:1rem;">משרד לוין תלרז — עורכי דין | דיני עבודה</p>
+    <p style="font-size:0.85rem; color:rgba(255,255,255,0.7); margin-top:0.3rem;">כל הנאמר בפורטל זה הינו למטרות מידע בלבד ואינו חלק מהתביעה המשפטית.</p>
+</div>
+
+{% endif %}
+</div>
+
+<script>
+// Set today for Jinja comparison isn't available in static context — using JS for deadline check
+const today = new Date().toISOString().slice(0,10);
+document.querySelectorAll('.deadline-box').forEach(el => {
+    const txt = el.textContent;
+    // Already handled server-side via template tag comparison
+});
+</script>
+
+</body>
+</html>

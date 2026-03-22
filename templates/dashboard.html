@@ -206,6 +206,21 @@
 
 <div id="toast"></div>
 
+<!-- Share Modal -->
+<div class="modal-overlay" id="share-modal">
+    <div class="modal" style="max-width:420px;">
+        <button class="modal-close" onclick="document.getElementById('share-modal').classList.remove('open')">✕</button>
+        <h2>🔗 קישור פורטל לקוח</h2>
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.8rem;">שתף/י את הקישור עם הלקוח לצפייה במצב התיק:</p>
+        <div style="background:#f0f4f8; border-radius:8px; padding:0.6rem 0.8rem; font-size:0.82rem; word-break:break-all; margin-bottom:1rem;" id="share-url"></div>
+        <div style="display:flex; gap:0.6rem; flex-wrap:wrap;">
+            <button class="btn btn-outline" onclick="navigator.clipboard.writeText(document.getElementById('share-url').dataset.url); toast('הועתק!');">📋 העתק</button>
+            <a id="share-wa-link" href="#" target="_blank" class="btn" style="background:#25d366; color:white; text-decoration:none;">📱 WhatsApp</a>
+            <a id="share-email-link" href="#" class="btn" style="background:#0072c6; color:white; text-decoration:none;">✉ אימייל</a>
+        </div>
+    </div>
+</div>
+
 <script>
 let cases = [];
 let dragCaseId = null;
@@ -296,6 +311,7 @@ function buildCard(c) {
         ${deadlineBadge}
         <div class="card-actions">
             <button class="btn-icon" title="עריכה" onclick="openModal(${c.id})">✏️</button>
+            <button class="btn-icon" title="קישור ללקוח" onclick="sharePortal(${c.id})">🔗</button>
             <button class="btn-icon" title="מחיקה" onclick="deleteCase(${c.id})">🗑️</button>
         </div>
         <div class="card-plaintiff">${c.plaintiff_name || '—'}</div>
@@ -387,6 +403,19 @@ function toast(msg) {
     el.textContent = msg;
     el.style.display = 'block';
     setTimeout(() => { el.style.display = 'none'; }, 2200);
+}
+
+async function sharePortal(id) {
+    const resp = await fetch(`/api/cases/${id}/client-token`, { method:'POST' });
+    const data = await resp.json();
+    if (!data.token) { toast('שגיאה ביצירת קישור'); return; }
+    const fullUrl = window.location.origin + data.url;
+    const msg = `שלום,\nניתן לעקוב אחר מצב תיקך במשרד לוין תלרז:\n${fullUrl}`;
+    document.getElementById('share-url').textContent = fullUrl;
+    document.getElementById('share-url').dataset.url = fullUrl;
+    document.getElementById('share-wa-link').href = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    document.getElementById('share-email-link').href = `mailto:?subject=עדכון תיק&body=${encodeURIComponent(msg)}`;
+    document.getElementById('share-modal').classList.add('open');
 }
 
 loadCases();
