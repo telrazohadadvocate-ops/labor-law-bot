@@ -1105,6 +1105,22 @@
                 </table>
             </div>
 
+            <!-- Evidence Checklist Panel -->
+            <div class="card" id="evidence-checklist-panel" style="display:none;">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem; flex-wrap:wrap; gap:0.5rem;">
+                    <h2 style="margin:0;">רשימת מסמכי ראיות נדרשים</h2>
+                    <div style="display:flex; align-items:center; gap:0.8rem;">
+                        <span style="font-size:0.85rem; color:var(--text-muted);">הושלמו:</span>
+                        <div style="background:var(--border); border-radius:6px; height:10px; width:140px; overflow:hidden;">
+                            <div id="evidence-progress-bar" style="background:var(--success); height:100%; width:0%; border-radius:6px; transition:width 0.3s;"></div>
+                        </div>
+                        <span id="evidence-progress-text" style="font-size:0.9rem; font-weight:600; color:var(--primary);">0%</span>
+                    </div>
+                </div>
+                <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:0.8rem;">סמן את המסמכים שברשותך. פריטים לא מסומנים יופיעו כאזהרות בכתב התביעה.</p>
+                <div id="evidence-checklist-body" style="display:flex; flex-direction:column; gap:0.3rem;"></div>
+            </div>
+
             <!-- Statute of Limitations Timeline Panel -->
             <div class="card" id="limitation-panel" style="display:none;">
                 <h2>לוח זמנים — התיישנות תביעות</h2>
@@ -1577,7 +1593,8 @@
             showModeBadge('template');
             showPreviewPanel(null);  // Hide AI preview for template mode
 
-            // Show limitation timeline
+            // Show evidence checklist and limitation timeline
+            renderEvidenceChecklist(result.calculations.claims);
             renderLimitationPanel(result.calculations.claims);
 
             lastAiResponse = null;
@@ -1691,6 +1708,13 @@
         startAiProgress();
 
         data.raw_text = rawFacts;
+
+        // Append missing evidence warnings to raw_text so Claude is aware
+        const missingEvidence = getMissingEvidenceWarnings();
+        if (missingEvidence.length > 0) {
+            data.raw_text += '\n\n--- מסמכים חסרים ---\n' + missingEvidence.join('\n');
+        }
+
         lastData = data;
 
         try {
@@ -1760,7 +1784,8 @@
                 showPreviewPanel(null);
             }
 
-            // Show limitation timeline
+            // Show evidence checklist and limitation timeline
+            renderEvidenceChecklist(result.calculations.claims);
             renderLimitationPanel(result.calculations.claims);
 
             // Brief delay to show completed progress before switching
@@ -1783,6 +1808,87 @@
             }
             goToStep(4);
         }
+    }
+
+    // ── Evidence Checklist ───────────────────────────────────────────────────
+
+    const EVIDENCE_ITEMS = {
+        severance:    ['מכתב פיטורים', 'טופס 161', 'אישור קופת פנסיה / גמל', '12 תלושי שכר אחרונים', 'חוזה עבודה', 'אישור ותק מהמעסיק'],
+        prior_notice: ['מכתב פיטורים / מכתב התפטרות', 'תיעוד תאריך ידיעה על הפסקת העבודה', 'תלוש שכר חודש הסיום'],
+        unpaid_salary:['תלושי שכר לתקופה הרלוונטית', 'תדפיסי חשבון בנק', 'תכתובות על השכר שלא שולם'],
+        overtime:     ['דוחות נוכחות', 'רישומי שעון נוכחות', 'הסכם שכר גלובלי (אם קיים)', 'תלושי שכר המציינים שעות נוספות'],
+        pension:      ['דוח קופת פנסיה', 'תלושים עם הפרשות לפנסיה', 'הסכם פנסיה / מסמכי פוליסה'],
+        vacation:     ['תלושי שכר עם יתרת חופשה', 'טופס פדיון חופשה', 'יומן היעדרויות / לוח חופשות'],
+        holidays:     ['תלושי שכר לתקופת החגים', 'לוח חגים של המעסיק'],
+        recuperation: ['תלושי שכר עם דמי הבראה', 'אישור זכאות להבראה'],
+        salary_delay: ['תלושי שכר עם תאריכי תשלום', 'תדפיסי חשבון בנק', 'הודעות על עיכוב שכר'],
+        emotional:    ['תיעוד אירועים רלוונטיים', 'עדויות / מכתבי עדים', 'אישורים רפואיים (אם רלוונטי)'],
+        deductions:   ['תלושי שכר עם הניכויים', 'הסכם מאשר / שולל את הניכויים'],
+    };
+
+    function renderEvidenceChecklist(claims) {
+        const panel = document.getElementById('evidence-checklist-panel');
+        const body = document.getElementById('evidence-checklist-body');
+        if (!claims) { panel.style.display = 'none'; return; }
+
+        body.innerHTML = '';
+        let totalItems = 0;
+
+        for (const [key, claim] of Object.entries(claims)) {
+            const items = EVIDENCE_ITEMS[key];
+            if (!items) continue;
+
+            // Section header
+            const hdr = document.createElement('div');
+            hdr.style.cssText = 'margin-top:0.7rem; font-weight:700; color:var(--primary); font-size:0.95rem; border-bottom:1px solid var(--border); padding-bottom:0.2rem;';
+            hdr.textContent = claim.name;
+            body.appendChild(hdr);
+
+            for (const item of items) {
+                totalItems++;
+                const id = `ev_${key}_${totalItems}`;
+                const row = document.createElement('label');
+                row.htmlFor = id;
+                row.style.cssText = 'display:flex; align-items:center; gap:0.6rem; padding:0.3rem 0.5rem; border-radius:6px; cursor:pointer; direction:rtl; font-size:0.9rem; transition:background 0.15s;';
+                row.onmouseenter = () => { row.style.background = '#f0f5ff'; };
+                row.onmouseleave = () => { row.style.background = ''; };
+
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.id = id;
+                cb.dataset.claimKey = key;
+                cb.dataset.itemName = item;
+                cb.style.cssText = 'width:16px; height:16px; accent-color:var(--success); cursor:pointer; flex-shrink:0;';
+                cb.addEventListener('change', updateEvidenceProgress);
+
+                const lbl = document.createElement('span');
+                lbl.textContent = item;
+
+                row.appendChild(cb);
+                row.appendChild(lbl);
+                body.appendChild(row);
+            }
+        }
+
+        updateEvidenceProgress();
+        panel.style.display = totalItems > 0 ? 'block' : 'none';
+    }
+
+    function updateEvidenceProgress() {
+        const all = document.querySelectorAll('#evidence-checklist-body input[type="checkbox"]');
+        const checked = document.querySelectorAll('#evidence-checklist-body input[type="checkbox"]:checked');
+        const pct = all.length > 0 ? Math.round((checked.length / all.length) * 100) : 0;
+        document.getElementById('evidence-progress-bar').style.width = pct + '%';
+        document.getElementById('evidence-progress-text').textContent = pct + '%';
+    }
+
+    function getMissingEvidenceWarnings() {
+        const unchecked = document.querySelectorAll('#evidence-checklist-body input[type="checkbox"]:not(:checked)');
+        const warnings = [];
+        unchecked.forEach(cb => {
+            warnings.push(`מסמך חסר — ${cb.dataset.itemName}`);
+        });
+        return warnings;
     }
 
     // ── Statute of Limitations Timeline ──────────────────────────────────────
