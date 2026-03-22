@@ -6,6 +6,7 @@ Generates Israeli labor law claims (כתבי תביעה) based on client intake 
 import json
 import math
 import logging
+import sqlite3
 import traceback
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
@@ -51,6 +52,67 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("RENDER", "") != ""  # Secure on Render (HTTPS)
 
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "LT2026")
+
+# ── SQLite Case Database ──────────────────────────────────────────────────────
+
+DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "cases.db"))
+
+KANBAN_STAGES = [
+    "קליטה", "איסוף מסמכים", "ניתוח ובדיקה", "מכתב התראה",
+    "משא ומתן", "הכנה להגשה", "הוגש", "דיון נקבע", "גישור/פשרה", "סגור",
+]
+
+
+def _get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _init_db():
+    with _get_db() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cases (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at    TEXT NOT NULL,
+                updated_at    TEXT NOT NULL,
+                plaintiff_name TEXT,
+                defendant_name TEXT,
+                start_date    TEXT,
+                end_date      TEXT,
+                total_amount  REAL DEFAULT 0,
+                stage         TEXT DEFAULT 'קליטה',
+                status        TEXT DEFAULT 'active',
+                outcome       TEXT,
+                outcome_amount REAL,
+                claim_types   TEXT,
+                form_data     TEXT,
+                calculations  TEXT,
+                doc_completion INTEGER DEFAULT 0,
+                next_deadline TEXT,
+                notes         TEXT
+            )
+        """)
+        # Migrate: add columns if upgrading from earlier schema
+        for col, defn in [
+            ("outcome", "TEXT"),
+            ("outcome_amount", "REAL"),
+            ("doc_completion", "INTEGER DEFAULT 0"),
+            ("next_deadline", "TEXT"),
+            ("notes", "TEXT"),
+            ("stage", "TEXT DEFAULT 'קליטה'"),
+            ("status", "TEXT DEFAULT 'active'"),
+            ("claim_types", "TEXT"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE cases ADD COLUMN {col} {defn}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+        conn.commit()
+    logging.info(f"Database initialised at {DB_PATH}")
+
+
+_init_db()
 
 # ── Claude API for Legal Text Rewriting ──────────────────────────────────────
 
@@ -2701,6 +2763,119 @@ def generate_demand_letter():
         download_name=filename,
         mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+
+
+# ── Case Dashboard & API ─────────────────────────────────────────────────────
+
+@app.route("/dashboard")
+def dashboard():
+    if not session.get("authenticated"):
+        return redirect(url_for("login"))
+    return render_template("dashboard.html", stages=KANBAN_STAGES)
+
+
+@app.route("/api/cases", methods=["GET"])
+def api_cases_list():
+    if not session.get("authenticated"):
+        return jsonify({"error": "unauthorized"}), 401
+    with _get_db() as conn:
+        rows = conn.execute("SELECT * FROM cases ORDER BY created_at DESC").fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/cases", methods=["POST"])
+def api_cases_create():
+    if not session.get("authenticated"):
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.json or {}
+    now = datetime.utcnow().isoformat()
+
+    # Derive next_deadline from limitation_warnings
+    next_dl = None
+    calcs = data.get("calculations") or {}
+    if isinstance(calcs, str):
+        try:
+            calcs = json.loads(calcs)
+        except Exception:
+            calcs = {}
+    claims = calcs.get("claims", {})
+    deadlines = []
+    for claim in claims.values():
+        lim = claim.get("limitation")
+        if lim and lim.get("status") in ("red", "yellow"):
+            deadlines.append(lim["deadline"])
+    if deadlines:
+        next_dl = min(deadlines)
+
+    claim_types = json.dumps(list(claims.keys())) if claims else "[]"
+
+    with _get_db() as conn:
+        cur = conn.execute(
+            """INSERT INTO cases
+               (created_at, updated_at, plaintiff_name, defendant_name,
+                start_date, end_date, total_amount, stage, status,
+                claim_types, form_data, calculations, doc_completion, next_deadline, notes)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                now, now,
+                data.get("plaintiff_name", ""),
+                data.get("defendant_name", ""),
+                data.get("start_date", ""),
+                data.get("end_date", ""),
+                float(data.get("total_amount", 0)),
+                data.get("stage", "קליטה"),
+                "active",
+                claim_types,
+                json.dumps(data.get("form_data", {})),
+                json.dumps(calcs),
+                int(data.get("doc_completion", 0)),
+                next_dl,
+                data.get("notes", ""),
+            ),
+        )
+        conn.commit()
+        case_id = cur.lastrowid
+    logging.info(f"api_cases_create: saved case id={case_id} for {data.get('plaintiff_name','?')}")
+    return jsonify({"success": True, "id": case_id}), 201
+
+
+@app.route("/api/cases/<int:case_id>", methods=["GET"])
+def api_case_get(case_id):
+    if not session.get("authenticated"):
+        return jsonify({"error": "unauthorized"}), 401
+    with _get_db() as conn:
+        row = conn.execute("SELECT * FROM cases WHERE id=?", (case_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(dict(row))
+
+
+@app.route("/api/cases/<int:case_id>", methods=["PATCH"])
+def api_case_update(case_id):
+    if not session.get("authenticated"):
+        return jsonify({"error": "unauthorized"}), 401
+    data = request.json or {}
+    now = datetime.utcnow().isoformat()
+    allowed = {"stage", "status", "outcome", "outcome_amount", "doc_completion", "next_deadline", "notes"}
+    sets = ", ".join(f"{k}=?" for k in data if k in allowed)
+    vals = [data[k] for k in data if k in allowed]
+    if not sets:
+        return jsonify({"error": "no valid fields"}), 400
+    vals += [now, case_id]
+    with _get_db() as conn:
+        conn.execute(f"UPDATE cases SET {sets}, updated_at=? WHERE id=?", vals)
+        conn.commit()
+    return jsonify({"success": True})
+
+
+@app.route("/api/cases/<int:case_id>", methods=["DELETE"])
+def api_case_delete(case_id):
+    if not session.get("authenticated"):
+        return jsonify({"error": "unauthorized"}), 401
+    with _get_db() as conn:
+        conn.execute("DELETE FROM cases WHERE id=?", (case_id,))
+        conn.commit()
+    return jsonify({"success": True})
 
 
 if __name__ == "__main__":

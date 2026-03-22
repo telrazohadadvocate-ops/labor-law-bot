@@ -495,9 +495,17 @@
 <body>
 
 <div class="header">
-    <h1>מחולל כתבי תביעה - דיני עבודה</h1>
-    <div class="subtitle">לוין תלרז - משרד עורכי דין</div>
-    <button id="install-btn" onclick="installApp()">&#128229; התקן אפליקציה</button>
+    <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap; justify-content:space-between; width:100%;">
+        <div>
+            <h1>מחולל כתבי תביעה - דיני עבודה</h1>
+            <div class="subtitle">לוין תלרז - משרד עורכי דין</div>
+        </div>
+        <div style="display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap;">
+            <a href="/dashboard" style="color:rgba(255,255,255,0.9); text-decoration:none; font-size:0.9rem; padding:0.3rem 0.8rem; border:1px solid rgba(255,255,255,0.4); border-radius:6px;">📋 לוח תיקים</a>
+            <a href="/history"   style="color:rgba(255,255,255,0.9); text-decoration:none; font-size:0.9rem; padding:0.3rem 0.8rem; border:1px solid rgba(255,255,255,0.4); border-radius:6px;">📂 היסטוריה</a>
+            <button id="install-btn" onclick="installApp()">&#128229; התקן אפליקציה</button>
+        </div>
+    </div>
 </div>
 
 <div class="container">
@@ -1206,6 +1214,10 @@
                 <button class="btn btn-outline" onclick="goToStep(4)">חזרה לעריכה</button>
                 <button class="btn btn-accent" onclick="downloadDocx()">הורד כקובץ Word</button>
                 <button class="btn btn-primary" onclick="copyClaimText()">העתק טקסט</button>
+                <button class="btn" id="save-case-btn" onclick="saveCase()"
+                    style="background:#2c5282; color:white; border:none; font-weight:bold;">
+                    💾 שמור תיק
+                </button>
                 <button class="btn" id="demand-letter-btn" onclick="downloadDemandLetter()"
                     style="background: linear-gradient(135deg, #c0392b, #e74c3c); color: white; border: none; font-weight: bold;">
                     📨 צור מכתב התראה
@@ -2162,6 +2174,56 @@
             URL.revokeObjectURL(url);
         } catch (e) {
             alert('שגיאה: ' + e.message);
+        }
+    }
+
+    async function saveCase() {
+        if (!lastData || !lastResult) { alert('יש לחשב את התביעה תחילה'); return; }
+        const btn = document.getElementById('save-case-btn');
+        btn.disabled = true;
+        btn.textContent = '⏳ שומר...';
+
+        const docPct = (() => {
+            const all = document.querySelectorAll('#evidence-checklist-body input[type="checkbox"]');
+            const checked = document.querySelectorAll('#evidence-checklist-body input[type="checkbox"]:checked');
+            return all.length > 0 ? Math.round(checked.length / all.length * 100) : 0;
+        })();
+
+        const payload = {
+            plaintiff_name: lastData.plaintiff_name || '',
+            defendant_name: lastData.defendant_name || '',
+            start_date: lastData.start_date || '',
+            end_date: lastData.end_date || '',
+            total_amount: lastResult.calculations ? lastResult.calculations.total : 0,
+            form_data: lastData,
+            calculations: lastResult.calculations || {},
+            doc_completion: docPct,
+        };
+
+        try {
+            const resp = await fetch('/api/cases', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const res = await resp.json();
+            if (res.success) {
+                btn.textContent = '✓ נשמר';
+                btn.style.background = '#38a169';
+                setTimeout(() => {
+                    btn.textContent = '💾 שמור תיק';
+                    btn.style.background = '#2c5282';
+                    btn.disabled = false;
+                }, 3000);
+            } else {
+                alert('שגיאה בשמירה: ' + (res.error || '?'));
+                btn.disabled = false;
+                btn.textContent = '💾 שמור תיק';
+            }
+        } catch (e) {
+            alert('שגיאה: ' + e.message);
+            btn.disabled = false;
+            btn.textContent = '💾 שמור תיק';
         }
     }
 

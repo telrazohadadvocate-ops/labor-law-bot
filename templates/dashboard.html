@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>לוח ניהול תיקים | לוין תלרז</title>
+    <style>
+        :root {
+            --primary: #1a365d; --primary-light: #2c5282; --accent: #c6a04a;
+            --bg: #f0f4f8; --card: #ffffff; --text: #1a202c;
+            --text-muted: #718096; --border: #e2e8f0;
+            --success: #38a169; --danger: #e53e3e; --warn: #d69e2e;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Segoe UI','David',Arial,sans-serif; background:var(--bg); color:var(--text); direction:rtl; }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            color:white; padding:1rem 2rem;
+            display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;
+        }
+        .header h1 { font-size:1.4rem; }
+        .header-links { display:flex; gap:0.8rem; }
+        .header-links a {
+            color:rgba(255,255,255,0.85); text-decoration:none; font-size:0.9rem;
+            padding:0.3rem 0.8rem; border:1px solid rgba(255,255,255,0.4); border-radius:6px;
+            transition:all 0.2s;
+        }
+        .header-links a:hover { background:rgba(255,255,255,0.15); color:white; }
+
+        .toolbar {
+            padding:1rem 1.5rem; background:var(--card);
+            border-bottom:1px solid var(--border);
+            display:flex; align-items:center; gap:1rem; flex-wrap:wrap;
+        }
+        .toolbar-stat {
+            background:var(--bg); border-radius:8px; padding:0.4rem 0.9rem;
+            font-size:0.85rem; color:var(--text-muted);
+        }
+        .toolbar-stat strong { color:var(--primary); }
+
+        .board-container {
+            display:flex; flex-direction:row-reverse; /* RTL: first column on right */
+            gap:0; overflow-x:auto; padding:1rem;
+            min-height:calc(100vh - 130px);
+            align-items:flex-start;
+        }
+
+        .kanban-column {
+            flex: 0 0 220px; min-width:220px;
+            background:var(--card); border-radius:10px;
+            margin-left:0.6rem;
+            box-shadow:0 1px 4px rgba(0,0,0,0.08);
+            display:flex; flex-direction:column;
+        }
+        .column-header {
+            background:var(--primary); color:white;
+            padding:0.6rem 0.8rem; border-radius:10px 10px 0 0;
+            font-weight:700; font-size:0.88rem;
+            display:flex; justify-content:space-between; align-items:center;
+        }
+        .column-header .col-count {
+            background:rgba(255,255,255,0.25); border-radius:10px;
+            padding:0.1rem 0.45rem; font-size:0.78rem; font-weight:600;
+        }
+        .column-body {
+            padding:0.5rem; flex:1; min-height:80px;
+            transition:background 0.15s;
+        }
+        .column-body.drag-over { background:#ebf4ff; }
+
+        /* Cards */
+        .case-card {
+            background:white; border-radius:8px; padding:0.7rem 0.8rem;
+            margin-bottom:0.5rem; cursor:grab;
+            border: 1.5px solid var(--border);
+            box-shadow:0 1px 3px rgba(0,0,0,0.07);
+            transition:box-shadow 0.15s, transform 0.15s;
+            font-size:0.84rem;
+            position:relative;
+        }
+        .case-card:active { cursor:grabbing; transform:rotate(1.5deg); box-shadow:0 6px 18px rgba(0,0,0,0.15); }
+        .case-card.dragging { opacity:0.45; }
+        .card-plaintiff { font-weight:700; color:var(--primary); margin-bottom:0.2rem; }
+        .card-defendant { color:var(--text-muted); font-size:0.8rem; margin-bottom:0.35rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .card-amount { font-weight:700; color:var(--success); font-size:0.88rem; }
+        .card-meta { display:flex; justify-content:space-between; margin-top:0.35rem; font-size:0.76rem; color:var(--text-muted); }
+        .card-meta .doc-pct { padding:0.1rem 0.4rem; border-radius:8px; font-weight:600; }
+        .deadline-badge {
+            position:absolute; top:0.4rem; left:0.5rem;
+            font-size:0.7rem; padding:0.1rem 0.4rem; border-radius:6px;
+            font-weight:600;
+        }
+        .card-actions { display:none; position:absolute; top:0.4rem; left:0.4rem; gap:0.3rem; }
+        .case-card:hover .card-actions { display:flex; }
+        .case-card:hover .deadline-badge { display:none; }
+        .btn-icon { background:none; border:none; cursor:pointer; font-size:0.85rem; padding:0.15rem 0.35rem; border-radius:4px; transition:background 0.15s; }
+        .btn-icon:hover { background:var(--border); }
+
+        /* Modal */
+        .modal-overlay {
+            display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5);
+            z-index:1000; align-items:center; justify-content:center;
+        }
+        .modal-overlay.open { display:flex; }
+        .modal {
+            background:white; border-radius:12px; padding:1.5rem;
+            min-width:340px; max-width:500px; width:90%; max-height:90vh;
+            overflow-y:auto; direction:rtl; position:relative;
+        }
+        .modal h2 { color:var(--primary); margin-bottom:1rem; font-size:1.1rem; }
+        .modal label { display:block; font-size:0.85rem; color:var(--text-muted); margin-bottom:0.3rem; }
+        .modal select, .modal input, .modal textarea {
+            width:100%; padding:0.5rem 0.7rem; border:1.5px solid var(--border);
+            border-radius:6px; font-size:0.9rem; direction:rtl; font-family:inherit;
+            margin-bottom:0.8rem;
+        }
+        .modal textarea { resize:vertical; min-height:60px; }
+        .modal .btn-row { display:flex; gap:0.6rem; margin-top:0.5rem; }
+        .btn { padding:0.5rem 1rem; border-radius:6px; border:none; cursor:pointer; font-size:0.9rem; font-weight:600; }
+        .btn-primary { background:var(--primary); color:white; }
+        .btn-danger  { background:var(--danger); color:white; }
+        .btn-outline { background:white; border:1.5px solid var(--border); color:var(--text); }
+        .modal-close { position:absolute; top:0.8rem; left:0.8rem; background:none; border:none; font-size:1.3rem; cursor:pointer; color:var(--text-muted); }
+
+        .empty-col { color:var(--text-muted); font-size:0.8rem; text-align:center; padding:1rem 0.5rem; }
+        #toast { position:fixed; bottom:1.5rem; right:1.5rem; background:var(--primary); color:white; padding:0.6rem 1.2rem; border-radius:8px; font-size:0.9rem; z-index:2000; display:none; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>לוח ניהול תיקים — לוין תלרז</h1>
+    <div class="header-links">
+        <a href="/">מחולל תביעות</a>
+        <a href="/history">היסטוריה</a>
+        <a href="/logout">יציאה</a>
+    </div>
+</div>
+
+<div class="toolbar" id="toolbar">
+    <span class="toolbar-stat">טוען...</span>
+</div>
+
+<div class="board-container" id="board">
+    {% for stage in stages %}
+    <div class="kanban-column" data-stage="{{ stage }}">
+        <div class="column-header">
+            <span>{{ stage }}</span>
+            <span class="col-count" id="count-{{ loop.index }}">0</span>
+        </div>
+        <div class="column-body" id="col-{{ loop.index }}"
+             ondragover="onDragOver(event)"
+             ondragleave="onDragLeave(event)"
+             ondrop="onDrop(event, '{{ stage }}')">
+            <div class="empty-col">אין תיקים</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Edit/View Modal -->
+<div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+        <button class="modal-close" onclick="closeModal()">✕</button>
+        <h2 id="modal-title">עריכת תיק</h2>
+        <input type="hidden" id="modal-case-id">
+
+        <label>שלב</label>
+        <select id="modal-stage">
+            {% for stage in stages %}<option value="{{ stage }}">{{ stage }}</option>{% endfor %}
+        </select>
+
+        <label>סטטוס</label>
+        <select id="modal-status">
+            <option value="active">פעיל</option>
+            <option value="won">ניצחון</option>
+            <option value="settled">פשרה</option>
+            <option value="lost">הפסד</option>
+        </select>
+
+        <label>תוצאה סופית</label>
+        <select id="modal-outcome">
+            <option value="">—</option>
+            <option value="won">ניצחון</option>
+            <option value="settled">פשרה</option>
+            <option value="lost">הפסד</option>
+        </select>
+
+        <label>סכום שהתקבל בפועל (₪)</label>
+        <input type="number" id="modal-outcome-amount" placeholder="0">
+
+        <label>מועד אחרון (התיישנות)</label>
+        <input type="date" id="modal-deadline">
+
+        <label>הערות</label>
+        <textarea id="modal-notes" rows="3"></textarea>
+
+        <div class="btn-row">
+            <button class="btn btn-primary" onclick="saveModal()">שמור</button>
+            <button class="btn btn-danger" onclick="deleteCase()">מחק תיק</button>
+            <button class="btn btn-outline" onclick="closeModal()">ביטול</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let cases = [];
+let dragCaseId = null;
+
+const STAGES = {{ stages | tojson }};
+
+async function loadCases() {
+    const resp = await fetch('/api/cases');
+    cases = await resp.json();
+    renderBoard();
+    renderToolbar();
+}
+
+function renderToolbar() {
+    const total = cases.length;
+    const active = cases.filter(c => c.status === 'active').length;
+    const totalAmt = cases.reduce((s, c) => s + (c.total_amount || 0), 0);
+    document.getElementById('toolbar').innerHTML = `
+        <span class="toolbar-stat">תיקים: <strong>${total}</strong></span>
+        <span class="toolbar-stat">פעילים: <strong>${active}</strong></span>
+        <span class="toolbar-stat">סה"כ תביעות: <strong>${Math.round(totalAmt).toLocaleString()} ₪</strong></span>
+        <span class="toolbar-stat" style="margin-right:auto;"></span>
+        <a href="/" style="background:var(--accent); color:var(--primary); padding:0.4rem 1rem; border-radius:6px; font-weight:700; text-decoration:none; font-size:0.9rem;">+ תיק חדש</a>
+    `;
+}
+
+function renderBoard() {
+    // Clear column bodies
+    STAGES.forEach((stage, i) => {
+        const col = document.getElementById(`col-${i+1}`);
+        col.innerHTML = '';
+    });
+
+    // Group cases by stage
+    const byStage = {};
+    STAGES.forEach(s => byStage[s] = []);
+    cases.forEach(c => {
+        const s = c.stage || 'קליטה';
+        if (byStage[s]) byStage[s].push(c);
+        else byStage[STAGES[0]].push(c);
+    });
+
+    STAGES.forEach((stage, i) => {
+        const col = document.getElementById(`col-${i+1}`);
+        const cnt = document.getElementById(`count-${i+1}`);
+        const stageCases = byStage[stage];
+        cnt.textContent = stageCases.length;
+
+        if (stageCases.length === 0) {
+            col.innerHTML = '<div class="empty-col">אין תיקים</div>';
+            return;
+        }
+        stageCases.forEach(c => col.appendChild(buildCard(c)));
+    });
+}
+
+function buildCard(c) {
+    const div = document.createElement('div');
+    div.className = 'case-card';
+    div.draggable = true;
+    div.dataset.id = c.id;
+    div.addEventListener('dragstart', e => {
+        dragCaseId = c.id;
+        div.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+    });
+    div.addEventListener('dragend', () => div.classList.remove('dragging'));
+
+    // Days since creation
+    const created = new Date(c.created_at);
+    const days = Math.floor((Date.now() - created) / 86400000);
+
+    // Doc completion colour
+    const doc = c.doc_completion || 0;
+    const docColor = doc >= 80 ? '#38a169' : doc >= 40 ? '#d69e2e' : '#e53e3e';
+
+    // Deadline badge
+    let deadlineBadge = '';
+    if (c.next_deadline) {
+        const dl = new Date(c.next_deadline);
+        const daysLeft = Math.floor((dl - Date.now()) / 86400000);
+        const dlColor = daysLeft < 0 ? '#c62828' : daysLeft < 60 ? '#e53e3e' : daysLeft < 180 ? '#d69e2e' : '#38a169';
+        const dlBg = daysLeft < 0 ? '#ffcdd2' : daysLeft < 60 ? '#ffebee' : daysLeft < 180 ? '#fff9c4' : '#e8f5e9';
+        deadlineBadge = `<span class="deadline-badge" style="background:${dlBg}; color:${dlColor};">📅 ${Math.abs(daysLeft)}י'</span>`;
+    }
+
+    div.innerHTML = `
+        ${deadlineBadge}
+        <div class="card-actions">
+            <button class="btn-icon" title="עריכה" onclick="openModal(${c.id})">✏️</button>
+            <button class="btn-icon" title="מחיקה" onclick="deleteCase(${c.id})">🗑️</button>
+        </div>
+        <div class="card-plaintiff">${c.plaintiff_name || '—'}</div>
+        <div class="card-defendant">${c.defendant_name || '—'}</div>
+        <div class="card-amount">${Math.round(c.total_amount || 0).toLocaleString()} ₪</div>
+        <div class="card-meta">
+            <span>${days} ימים</span>
+            <span class="doc-pct" style="background:${docColor}22; color:${docColor};">📎 ${doc}%</span>
+        </div>`;
+    return div;
+}
+
+// ── Drag & Drop ──
+function onDragOver(e) {
+    e.preventDefault();
+    e.currentTarget.classList.add('drag-over');
+}
+function onDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+async function onDrop(e, stage) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drag-over');
+    if (!dragCaseId) return;
+    await fetch(`/api/cases/${dragCaseId}`, {
+        method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ stage }),
+    });
+    const c = cases.find(x => x.id === dragCaseId);
+    if (c) c.stage = stage;
+    dragCaseId = null;
+    renderBoard();
+    toast('שלב עודכן');
+}
+
+// ── Modal ──
+function openModal(id) {
+    const c = cases.find(x => x.id === id);
+    if (!c) return;
+    document.getElementById('modal-case-id').value = id;
+    document.getElementById('modal-title').textContent = `${c.plaintiff_name || 'תיק'} נגד ${c.defendant_name || '?'}`;
+    document.getElementById('modal-stage').value = c.stage || 'קליטה';
+    document.getElementById('modal-status').value = c.status || 'active';
+    document.getElementById('modal-outcome').value = c.outcome || '';
+    document.getElementById('modal-outcome-amount').value = c.outcome_amount || '';
+    document.getElementById('modal-deadline').value = c.next_deadline || '';
+    document.getElementById('modal-notes').value = c.notes || '';
+    document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+}
+
+async function saveModal() {
+    const id = document.getElementById('modal-case-id').value;
+    const payload = {
+        stage: document.getElementById('modal-stage').value,
+        status: document.getElementById('modal-status').value,
+        outcome: document.getElementById('modal-outcome').value,
+        outcome_amount: parseFloat(document.getElementById('modal-outcome-amount').value) || null,
+        next_deadline: document.getElementById('modal-deadline').value,
+        notes: document.getElementById('modal-notes').value,
+    };
+    await fetch(`/api/cases/${id}`, {
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(payload),
+    });
+    const c = cases.find(x => x.id == id);
+    if (c) Object.assign(c, payload);
+    closeModal();
+    renderBoard();
+    renderToolbar();
+    toast('תיק עודכן');
+}
+
+async function deleteCase(id) {
+    const cid = id || document.getElementById('modal-case-id').value;
+    if (!confirm('למחוק את התיק?')) return;
+    await fetch(`/api/cases/${cid}`, { method:'DELETE' });
+    cases = cases.filter(x => x.id != cid);
+    closeModal();
+    renderBoard();
+    renderToolbar();
+    toast('תיק נמחק');
+}
+
+function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 2200);
+}
+
+loadCases();
+</script>
+</body>
+</html>
