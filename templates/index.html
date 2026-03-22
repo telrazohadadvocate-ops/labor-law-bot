@@ -554,6 +554,8 @@
                 <!-- Extraction results (hidden initially) -->
                 <div class="extraction-results" id="extraction-results" style="display:none;">
                     <h3 style="color: var(--primary); margin-bottom: 0.3rem;">נתונים שחולצו מהמסמכים</h3>
+                    <div id="extraction-summary" style="display:none; background:#e8f5e9; border-right:4px solid #4caf50; border-radius:8px; padding:0.7rem 1rem; margin-bottom:0.8rem; color:#1b5e20; font-size:0.9rem; direction:rtl;"></div>
+                    <div id="extraction-redflags" style="display:none; background:#fff3e0; border-right:4px solid #ff9800; border-radius:8px; padding:0.7rem 1rem; margin-bottom:0.8rem; color:#e65100; font-size:0.9rem; direction:rtl;"></div>
                     <p style="font-size: 0.85rem; color: var(--text-muted);">ניתן לערוך לפני המשך.</p>
                     <div class="extraction-grid">
                         <div class="extraction-field">
@@ -1271,6 +1273,25 @@
             batchFiles = [];
             updateUploadStatus();
 
+            // Show extraction summary panel
+            const summaryEl = document.getElementById('extraction-summary');
+            const filled = result.filled_count || 0;
+            const docCount = result.doc_count || totalFilesUploaded;
+            summaryEl.textContent = `חולצו ${filled} שדות מתוך ${docCount} מסמכים. נא לאמת ולהשלים פרטים חסרים.`;
+            summaryEl.style.display = 'block';
+
+            // Show red_flags if any
+            const redFlagsEl = document.getElementById('extraction-redflags');
+            const redFlags = (result.extracted && Array.isArray(result.extracted.red_flags))
+                ? result.extracted.red_flags : [];
+            if (redFlags.length > 0) {
+                redFlagsEl.innerHTML = '<strong>⚠ הערות ואזהרות:</strong><ul style="margin:0.3rem 0 0 0; padding-right:1.2rem;">' +
+                    redFlags.map(f => `<li>${f}</li>`).join('') + '</ul>';
+                redFlagsEl.style.display = 'block';
+            } else {
+                redFlagsEl.style.display = 'none';
+            }
+
             // Merge extracted data with existing fields
             mergeExtractedData(result.extracted);
             document.getElementById('extraction-results').style.display = 'block';
@@ -1282,9 +1303,12 @@
     }
 
     function mergeExtractedData(data) {
-        // For each field: only overwrite if the new value is non-empty AND either the
-        // existing field is empty OR the new value is different (new data wins for
-        // non-empty values — later batches refine earlier ones).
+        // Skip "לא נמצא" placeholder values from backend (belt-and-suspenders)
+        const NOT_FOUND = new Set(['לא נמצא', 'לא נמצא.', 'לא ידוע', 'לא צוין']);
+        function isValidVal(v) {
+            return v != null && v !== '' && v !== 0 && !NOT_FOUND.has(String(v).trim());
+        }
+
         const fields = [
             ['employee_name', 'ext_employee_name'],
             ['id_number', 'ext_id_number'],
@@ -1297,7 +1321,7 @@
             ['address', 'ext_address'],
         ];
         for (const [dataKey, elId] of fields) {
-            const newVal = (data[dataKey] != null && data[dataKey] !== '') ? String(data[dataKey]) : '';
+            const newVal = isValidVal(data[dataKey]) ? String(data[dataKey]) : '';
             if (newVal) {
                 const el = document.getElementById(elId);
                 if (el && !el.value) {
@@ -1305,14 +1329,16 @@
                 }
             }
         }
-        // key_facts: append new facts to existing ones
-        const newFacts = Array.isArray(data.key_facts) ? data.key_facts.join('\n') : (data.key_facts || '');
-        if (newFacts) {
+
+        // key_facts: format as bullet points and append to existing content
+        const factsArr = Array.isArray(data.key_facts)
+            ? data.key_facts.filter(f => isValidVal(f))
+            : [];
+        if (factsArr.length > 0) {
+            const newFacts = factsArr.map(f => '• ' + f).join('\n');
             const el = document.getElementById('ext_key_facts');
-            if (el.value) {
-                el.value = el.value.trim() + '\n' + newFacts;
-            } else {
-                el.value = newFacts;
+            if (el) {
+                el.value = el.value.trim() ? el.value.trim() + '\n' + newFacts : newFacts;
             }
         }
     }

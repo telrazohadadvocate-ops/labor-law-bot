@@ -2118,81 +2118,240 @@ def _resize_image_b64(b64data, media_type, max_px=1500, jpeg_quality=85):
 
 @app.route("/extract-documents", methods=["POST"])
 def extract_documents():
-    """Receive uploaded document images, send to Claude Vision, return extracted data."""
+    """Receive uploaded documents, extract text where possible, send to Claude, return extracted data."""
+    import base64
     data = request.json
     files = data.get("files", [])
     if not files:
         return jsonify({"success": False, "error": "לא התקבלו קבצים"}), 400
 
+    logging.info(f"extract-documents: received {len(files)} files")
+    for f in files:
+        b64len = len(f.get("data", ""))
+        logging.info(f"  File: name={f.get('name', '?')}, type={f.get('type', '?')}, b64_len={b64len}")
+
     client = _get_claude_client()
     if client is None:
         return jsonify({"success": False, "error": "שירות AI אינו זמין — מפתח API חסר"}), 500
 
-    # Build content blocks for Claude Vision
+    # Build content blocks for Claude
     content = []
     for f in files[:50]:  # max 50 files
+        name = f.get("name", "?")
         media_type = f.get("type", "image/jpeg")
         b64data = f.get("data", "")
         if not b64data:
+            logging.warning(f"  Skipping {name}: empty data")
             continue
-        # PDF files are sent as document type
-        if media_type == "application/pdf":
-            content.append({
-                "type": "document",
-                "source": {"type": "base64", "media_type": media_type, "data": b64data},
-            })
-        else:
-            # Resize images to avoid Claude's dimension limits for multi-image requests
+
+        name_lower = name.lower()
+
+        # ── DOCX files: extract text with python-docx ──
+        if name_lower.endswith(".docx") or "wordprocessingml" in media_type:
             try:
-                b64data, media_type = _resize_image_b64(b64data, media_type)
+                from docx import Document as DocxDocument
+                raw = base64.b64decode(b64data)
+                doc = DocxDocument(io.BytesIO(raw))
+                text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+                logging.info(f"  DOCX text extracted for {name}: {len(text)} chars")
+                content.append({"type": "text", "text": f"[מסמך Word: {name}]\n{text}"})
+                continue
             except Exception as e:
-                logging.warning(f"Image resize failed for {f.get('name', '?')}: {e}")
-            content.append({
-                "type": "image",
-                "source": {"type": "base64", "media_type": media_type, "data": b64data},
-            })
+                logging.warning(f"  DOCX extraction failed for {name}: {e}")
+                continue  # Skip broken DOCX rather than send binary
+
+        # ── PDF files: try text extraction first, fall back to Claude vision ──
+        if media_type == "application/pdf" or name_lower.endswith(".pdf"):
+            text_extracted = False
+            try:
+                import pdfplumber
+                raw = base64.b64decode(b64data)
+                with pdfplumber.open(io.BytesIO(raw)) as pdf:
+                    pages_text = [p.extract_text() or "" for p in pdf.pages]
+                text = "\n\n".join(t for t in pages_text if t.strip())
+                if text.strip():
+                    logging.info(f"  PDF text extracted for {name}: {len(text)} chars")
+                    content.append({"type": "text", "text": f"[מסמך PDF: {name}]\n{text}"})
+                    text_extracted = True
+            except Exception as e:
+                logging.warning(f"  pdfplumber failed for {name}: {e} — falling back to vision")
+            if not text_extracted:
+                logging.info(f"  Sending {name} as PDF vision document")
+                content.append({
+                    "type": "document",
+                    "source": {"type": "base64", "media_type": "application/pdf", "data": b64data},
+                })
+            continue
+
+        # ── Images: convert HEIC→JPEG if needed, then resize ──
+        if media_type in ("image/heic", "image/heif") or name_lower.endswith((".heic", ".heif")):
+            try:
+                import pillow_heif
+                pillow_heif.register_heif_opener()
+                from PIL import Image as _PIL_Image
+                raw = base64.b64decode(b64data)
+                img = _PIL_Image.open(io.BytesIO(raw)).convert("RGB")
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=85)
+                b64data = base64.b64encode(buf.getvalue()).decode()
+                media_type = "image/jpeg"
+                logging.info(f"  Converted HEIC→JPEG for {name}")
+            except Exception as e:
+                logging.warning(f"  HEIC conversion failed for {name}: {e}")
+
+        try:
+            b64data, media_type = _resize_image_b64(b64data, media_type)
+            logging.info(f"  Image ready for {name}: media_type={media_type}, b64_len={len(b64data)}")
+        except Exception as e:
+            logging.warning(f"  Image resize failed for {name}: {e}")
+
+        content.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": media_type, "data": b64data},
+        })
+
+    if not content:
+        return jsonify({"success": False, "error": "לא נמצא תוכן ניתן לניתוח בקבצים שהועלו"}), 400
 
     extraction_prompt = (
-        "נתח את המסמכים המצורפים (תלושי שכר, מכתבי פיטורים, חוזי עבודה וכו׳) "
-        "וחלץ את הנתונים הבאים בפורמט JSON בלבד, ללא טקסט נוסף.\n"
-        "אם שדה לא נמצא, השאר מחרוזת ריקה.\n"
-        "תאריכים בפורמט YYYY-MM-DD.\n\n"
+        'You are analyzing Israeli employment documents (Hebrew). Extract ALL of the following information. '
+        "If a field is not found, write \"\". Return ONLY valid JSON.\n\n"
+        "From pay slips (תלושי שכר):\n"
+        "- employee_name: שם העובד (as written on the slip)\n"
+        "- id_number: תעודת זהות/מספר עובד\n"
+        "- employer_name: שם המעסיק\n"
+        "- employer_id: ח.פ./ע.מ.\n"
+        "- gross_salary: שכר ברוטו (numeric value only)\n"
+        "- net_salary: שכר נטו (numeric value only)\n"
+        "- start_date: תאריך תחילת עבודה (if shown) in YYYY-MM-DD format\n"
+        "- pay_period: תקופת התשלום (חודש/שנה)\n"
+        "- pension_deduction: ניכוי פנסיה (amount and percentage)\n"
+        "- overtime_hours: שעות נוספות (if shown)\n"
+        "- overtime_pay: תשלום שעות נוספות\n"
+        "- vacation_days_used: ימי חופשה שנוצלו\n"
+        "- vacation_balance: יתרת חופשה\n"
+        "- sick_days_used: ימי מחלה שנוצלו\n"
+        "- sick_days_balance: יתרת מחלה\n"
+        "- convalescence_pay: דמי הבראה (if shown)\n"
+        "- travel_allowance: דמי נסיעות\n\n"
+        "From termination letters (מכתב פיטורים):\n"
+        "- end_date: תאריך סיום עבודה in YYYY-MM-DD format\n"
+        "- termination_reason: סיבת הפיטורים\n"
+        "- notice_period_given: האם ניתנה הודעה מוקדמת ולכמה זמן\n"
+        "- severance_mentioned: האם צוינו פיצויי פיטורים\n\n"
+        "From employment contracts (הסכם עבודה):\n"
+        "- start_date: תאריך תחילת עבודה in YYYY-MM-DD format\n"
+        "- job_title: תפקיד\n"
+        "- salary_agreed: שכר מוסכם\n"
+        "- work_hours: שעות עבודה\n"
+        "- work_days: ימי עבודה בשבוע (5 or 6)\n"
+        "- benefits: הטבות שהובטחו\n"
+        "- special_terms: תנאים מיוחדים\n\n"
+        "From any document, also extract:\n"
+        "- address: כתובת מגורים של העובד\n"
+        "- monthly_salary: שכר חודשי ברוטו (numeric only, no currency symbols)\n"
+        "- key_facts: list of ALL important facts relevant to a labor law claim, in Hebrew\n"
+        "- document_type: type of document identified\n"
+        "- red_flags: list of any issues noticed (missing signatures, inconsistencies, illegal clauses, etc.)\n\n"
+        "Analyze ALL uploaded documents together and provide a MERGED result. "
+        "If the same field appears in multiple documents, use the most recent/reliable value.\n\n"
+        "Return ONLY this JSON structure (no markdown, no extra text):\n"
         "{\n"
-        '  "employee_name": "שם העובד/ת",\n'
-        '  "id_number": "מספר ת.ז.",\n'
-        '  "employer_name": "שם המעסיק/חברה",\n'
-        '  "employer_id": "ח.פ. או ע.מ.",\n'
-        '  "start_date": "YYYY-MM-DD",\n'
-        '  "end_date": "YYYY-MM-DD",\n'
+        '  "employee_name": "",\n'
+        '  "id_number": "",\n'
+        '  "employer_name": "",\n'
+        '  "employer_id": "",\n'
+        '  "start_date": "",\n'
+        '  "end_date": "",\n'
         '  "monthly_salary": 0,\n'
-        '  "job_title": "תפקיד",\n'
-        '  "address": "כתובת מגורים",\n'
-        '  "key_facts": ["עובדה 1", "עובדה 2"]\n'
+        '  "job_title": "",\n'
+        '  "address": "",\n'
+        '  "gross_salary": "",\n'
+        '  "net_salary": "",\n'
+        '  "pay_period": "",\n'
+        '  "pension_deduction": "",\n'
+        '  "overtime_hours": "",\n'
+        '  "overtime_pay": "",\n'
+        '  "vacation_days_used": "",\n'
+        '  "vacation_balance": "",\n'
+        '  "sick_days_used": "",\n'
+        '  "sick_days_balance": "",\n'
+        '  "convalescence_pay": "",\n'
+        '  "travel_allowance": "",\n'
+        '  "termination_reason": "",\n'
+        '  "notice_period_given": "",\n'
+        '  "severance_mentioned": "",\n'
+        '  "work_hours": "",\n'
+        '  "work_days": "",\n'
+        '  "benefits": "",\n'
+        '  "special_terms": "",\n'
+        '  "key_facts": [],\n'
+        '  "document_type": "",\n'
+        '  "red_flags": []\n'
         "}"
     )
     content.append({"type": "text", "text": extraction_prompt})
 
+    logging.info(f"extract-documents: sending {len(content)} content blocks to Claude")
+    logging.info(f"  Prompt preview (first 500 chars): {extraction_prompt[:500]}")
+
     try:
         message = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=2000,
-            system="אתה עוזר משפטי שמחלץ נתוני העסקה ממסמכים. החזר JSON בלבד.",
+            max_tokens=4000,
+            system=(
+                "אתה עוזר משפטי שמחלץ נתוני העסקה ממסמכים ישראלים. "
+                "החזר JSON תקין בלבד, ללא טקסט נוסף, ללא markdown."
+            ),
             messages=[{"role": "user", "content": content}],
         )
         raw_text = message.content[0].text.strip()
         logging.info(f"extract-documents: raw response length={len(raw_text)}")
+        logging.info(f"  Response preview (first 500 chars): {raw_text[:500]}")
 
-        # Parse JSON from response (handle possible markdown code blocks)
+        # Parse JSON — strip markdown code fences if present
         json_text = raw_text
-        if "```" in json_text:
-            # Extract JSON from code block
+        if "```" in json_text or not json_text.startswith("{"):
             start = json_text.find("{")
             end = json_text.rfind("}") + 1
             if start >= 0 and end > start:
                 json_text = json_text[start:end]
 
         extracted = json.loads(json_text)
-        return jsonify({"success": True, "extracted": extracted})
+        logging.info(f"extract-documents: parsed JSON keys: {list(extracted.keys())}")
+
+        # Filter out "לא נמצא" placeholder values
+        NOT_FOUND = {"לא נמצא", "לא נמצא.", "לא ידוע", "לא צוין"}
+        for key in list(extracted.keys()):
+            val = extracted[key]
+            if isinstance(val, str) and val.strip() in NOT_FOUND:
+                extracted[key] = ""
+            elif isinstance(val, list):
+                extracted[key] = [v for v in val if isinstance(v, str) and v.strip() not in NOT_FOUND]
+
+        # Infer monthly_salary from gross_salary if not set
+        if not extracted.get("monthly_salary") and extracted.get("gross_salary"):
+            try:
+                extracted["monthly_salary"] = float(str(extracted["gross_salary"]).replace(",", ""))
+            except Exception:
+                pass
+
+        filled = sum(
+            1 for v in extracted.values()
+            if v and v != 0 and v != [] and str(v).strip() not in ("", "0")
+        )
+        logging.info(f"extract-documents: {filled} fields filled")
+        logging.info(
+            f"  Filled data: "
+            + json.dumps({k: v for k, v in extracted.items() if v and v != [] and v != 0}, ensure_ascii=False)[:500]
+        )
+
+        return jsonify({
+            "success": True,
+            "extracted": extracted,
+            "filled_count": filled,
+            "doc_count": len(files),
+        })
 
     except json.JSONDecodeError as e:
         logging.error(f"extract-documents: JSON parse error: {e}\nRaw: {raw_text[:500]}")
