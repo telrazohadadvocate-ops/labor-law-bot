@@ -570,17 +570,48 @@ def calculate_all_claims(data):
     if data.get("claim_severance"):
         severance = calculate_severance(determining_salary, duration["decimal_years"])
         deposited = safe_float(data.get("severance_deposited"), 0)
-        net = max(0, round(severance - deposited, 2))
-        formula = f"{determining_salary:,.0f} ₪ × {duration['decimal_years']} שנים = {severance:,.0f} ₪"
-        if deposited > 0:
-            formula += f" בניכוי {deposited:,.0f} ₪ = {net:,.0f} ₪"
-        results["claims"]["severance"] = {
+
+        # ── Section 14 adjustment ──────────────────────────────────────────
+        section14_data = None
+        if data.get("section14_arrangement"):
+            STATUTORY_RATE = 8.33  # percent per month
+            actual_rate = min(STATUTORY_RATE, max(0, safe_float(data.get("section14_rate"), 0)))
+            s14_contributions = (actual_rate / 100) * determining_salary * duration["total_months"]
+            gap_rate = max(0, STATUTORY_RATE - actual_rate)
+            gap_amount = round((gap_rate / 100) * determining_salary * duration["total_months"], 2)
+            # Effective deduction = max of actual fund balance and s14 contributions
+            effective_deduction = max(deposited, round(s14_contributions, 2))
+            net = max(0, round(severance - effective_deduction, 2))
+            formula = (
+                f"פיצויים חוקיים: {determining_salary:,.0f} ₪ × {duration['decimal_years']:.2f} שנים = {severance:,.0f} ₪ | "
+                f"סעיף 14 ({actual_rate}%): {s14_contributions:,.0f} ₪"
+            )
+            if gap_rate > 0:
+                formula += f" | פער ({gap_rate:.2f}%): {gap_amount:,.0f} ₪"
+            formula += f" | נטו: {net:,.0f} ₪"
+            section14_data = {
+                "actual_rate": actual_rate,
+                "contributions": round(s14_contributions, 2),
+                "gap_rate": gap_rate,
+                "gap_amount": gap_amount,
+                "statutory": severance,
+            }
+        else:
+            net = max(0, round(severance - deposited, 2))
+            formula = f"{determining_salary:,.0f} ₪ × {duration['decimal_years']} שנים = {severance:,.0f} ₪"
+            if deposited > 0:
+                formula += f" בניכוי {deposited:,.0f} ₪ = {net:,.0f} ₪"
+
+        sev_entry = {
             "name": "פיצויי פיטורים",
             "full_amount": severance,
             "deposited": deposited,
             "amount": net,
             "formula": formula,
         }
+        if section14_data:
+            sev_entry["section14"] = section14_data
+        results["claims"]["severance"] = sev_entry
 
     # Prior notice (הודעה מוקדמת)
     if data.get("claim_prior_notice"):
@@ -1062,7 +1093,18 @@ def generate_claim_text(data, calculations):
         sections.append(
             f"{det_salary:,.0f} ₪ (שכר חודשי קובע) * {dur['decimal_years']} (תקופת העסקה) = {c['full_amount']:,.1f} ₪"
         )
-        if c["deposited"] > 0:
+        # Section 14 narrative
+        s14 = c.get("section14")
+        if s14:
+            sections.append(
+                f"למעסיק הייתה הסדר פנסיה לפי סעיף 14 לחוק פיצויי פיטורים בשיעור {s14['actual_rate']}% בלבד. "
+                f"השיעור הנדרש על פי חוק הינו 8.33%."
+            )
+            if s14["gap_rate"] > 0:
+                sections.append(
+                    f"הפער בין הנדרש להמופרש בפועל הינו {s14['gap_rate']:.2f}% × {det_salary:,.0f} ₪ × {dur['total_months']} חודשים = {s14['gap_amount']:,.0f} ₪."
+                )
+        elif c["deposited"] > 0:
             sections.append(f"בניכוי צבירת הפיצויים {g['in_his_name']} {pronoun} בקופה בסך {c['deposited']:,.0f} ₪")
             sections.append(f"סה\"כ {pronoun} {g['entitled']} להשלמת פיצויי פיטורים בסך {c['amount']:,.0f} ₪")
         sections.append(
