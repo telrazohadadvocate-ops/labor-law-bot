@@ -2153,7 +2153,7 @@ def _build_preview(ai_response, calculations):
 
 @app.before_request
 def require_login():
-    allowed = ("login", "static", "service_worker", "manifest")
+    allowed = ("login", "static", "service_worker", "manifest", "client_portal")
     if request.endpoint not in allowed and not session.get("authenticated"):
         # Return JSON error for AJAX/API requests instead of HTML redirect
         if request.is_json or request.headers.get("Accept", "").startswith("application/json"):
