@@ -2419,8 +2419,22 @@ def extract_documents():
                 from docx import Document as DocxDocument
                 raw = base64.b64decode(b64data)
                 doc = DocxDocument(io.BytesIO(raw))
-                text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-                logging.info(f"  DOCX text extracted for {name}: {len(text)} chars")
+                # Extract paragraphs AND table cells (pay slips are commonly table-based)
+                parts = [p.text for p in doc.paragraphs if p.text.strip()]
+                for tbl in doc.tables:
+                    for row in tbl.rows:
+                        row_parts = []
+                        for cell in row.cells:
+                            cell_text = " ".join(
+                                p.text for p in cell.paragraphs if p.text.strip()
+                            )
+                            if cell_text:
+                                row_parts.append(cell_text)
+                        if row_parts:
+                            parts.append(" | ".join(row_parts))
+                text = "\n".join(parts)
+                logging.info(f"  DOCX text extracted for {name}: {len(text)} chars "
+                             f"({len(doc.paragraphs)} paras, {len(doc.tables)} tables)")
                 content.append({"type": "text", "text": f"[מסמך Word: {name}]\n{text}"})
                 continue
             except Exception as e:
@@ -2437,9 +2451,31 @@ def extract_documents():
                     pages_text = [p.extract_text() or "" for p in pdf.pages]
                 text = "\n\n".join(t for t in pages_text if t.strip())
                 if text.strip():
-                    logging.info(f"  PDF text extracted for {name}: {len(text)} chars")
-                    content.append({"type": "text", "text": f"[מסמך PDF: {name}]\n{text}"})
-                    text_extracted = True
+                    # Detect visual-order (reversed) Hebrew — common in PDFs generated
+                    # by old Hebrew word processors. Characters within each word are
+                    # stored in display order (LTR), making Hebrew appear reversed.
+                    # Heuristic: final-form letters (ם,ן,ך,ף,ץ) NEVER legitimately
+                    # start a Hebrew word. If >8% of Hebrew words start with one,
+                    # the PDF is in visual order and unreadable as text.
+                    _FINAL_FORMS = set("םןךףץ")
+                    _all_words = text.split()
+                    _heb_words = [w for w in _all_words if any("\u05d0" <= c <= "\u05ea" for c in w)]
+                    _bad_starts = sum(1 for w in _heb_words if w and w[0] in _FINAL_FORMS)
+                    _is_visual_order = (
+                        len(_heb_words) >= 5 and
+                        _bad_starts / len(_heb_words) > 0.08
+                    )
+                    if _is_visual_order:
+                        logging.warning(
+                            f"  PDF {name}: visual-order Hebrew detected "
+                            f"({_bad_starts}/{len(_heb_words)} Hebrew words start with final-form) "
+                            "— falling back to Claude PDF vision for accurate extraction"
+                        )
+                        # Fall through to vision path (text_extracted stays False)
+                    else:
+                        logging.info(f"  PDF text extracted for {name}: {len(text)} chars")
+                        content.append({"type": "text", "text": f"[מסמך PDF: {name}]\n{text}"})
+                        text_extracted = True
             except Exception as e:
                 logging.warning(f"  pdfplumber failed for {name}: {e} — falling back to vision")
             if not text_extracted:
