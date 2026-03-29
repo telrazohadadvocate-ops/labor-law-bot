@@ -541,12 +541,12 @@
                          onclick="document.getElementById('file-input').click()">
                         <div class="icon">📄</div>
                         <strong>גררו קבצים לכאן או לחצו לבחירה</strong>
-                        <p>תמונות (JPG, PNG) או PDF — עד 30 קבצים בכל סבב</p>
+                        <p>תמונות, PDF, Word, Excel, TXT — עד 30 קבצים בכל סבב</p>
                     </div>
                     <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.4rem;">
                         ניתן להעלות עד 30 קבצים בכל פעם. ניתן להעלות קבצים נוספים לאחר כל סבב.
                     </p>
-                    <input type="file" id="file-input" multiple accept="image/*,.pdf" style="display:none"
+                    <input type="file" id="file-input" multiple accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.heic,.heif,.bmp,.tiff,.xlsx,.xls,.txt,image/*" style="display:none"
                            onchange="handleFiles(this.files)">
                     <ul class="file-list" id="file-list"></ul>
 

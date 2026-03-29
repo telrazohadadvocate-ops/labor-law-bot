@@ -2441,6 +2441,73 @@ def extract_documents():
                 logging.warning(f"  DOCX extraction failed for {name}: {e}")
                 continue  # Skip broken DOCX rather than send binary
 
+        # ── DOC files (old Word format): extract with python-docx or textract ──
+        if name_lower.endswith(".doc"):
+            try:
+                import subprocess, tempfile, shutil
+                raw = base64.b64decode(b64data)
+                # Try LibreOffice/soffice conversion to docx first
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    doc_path = os.path.join(tmpdir, name)
+                    with open(doc_path, "wb") as fh:
+                        fh.write(raw)
+                    result = subprocess.run(
+                        ["soffice", "--headless", "--convert-to", "docx", "--outdir", tmpdir, doc_path],
+                        capture_output=True, timeout=30
+                    )
+                    docx_path = doc_path.replace(".doc", ".docx")
+                    if os.path.exists(docx_path):
+                        from docx import Document as DocxDocument
+                        doc = DocxDocument(docx_path)
+                        parts = [p.text for p in doc.paragraphs if p.text.strip()]
+                        for tbl in doc.tables:
+                            for row in tbl.rows:
+                                row_parts = [" ".join(p.text for p in cell.paragraphs if p.text.strip()) for cell in row.cells]
+                                row_parts = [x for x in row_parts if x]
+                                if row_parts:
+                                    parts.append(" | ".join(row_parts))
+                        text = "\n".join(parts)
+                        logging.info(f"  DOC→DOCX text extracted for {name}: {len(text)} chars")
+                        content.append({"type": "text", "text": f"[מסמך Word: {name}]\n{text}"})
+                        continue
+            except Exception as e:
+                logging.warning(f"  DOC extraction failed for {name}: {e}")
+            continue  # Skip unreadable DOC
+
+        # ── Excel files: extract data with openpyxl ──
+        if name_lower.endswith((".xlsx", ".xls")) or "spreadsheet" in media_type:
+            try:
+                import openpyxl
+                raw = base64.b64decode(b64data)
+                wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+                rows_text = []
+                for sheet in wb.worksheets:
+                    rows_text.append(f"[גיליון: {sheet.title}]")
+                    for row in sheet.iter_rows(values_only=True):
+                        row_vals = [str(c) if c is not None else "" for c in row]
+                        # Skip fully empty rows
+                        if any(v.strip() for v in row_vals):
+                            rows_text.append(" | ".join(row_vals))
+                text = "\n".join(rows_text)
+                logging.info(f"  Excel extracted for {name}: {len(text)} chars")
+                content.append({"type": "text", "text": f"[קובץ Excel: {name}]\n{text}"})
+                continue
+            except Exception as e:
+                logging.warning(f"  Excel extraction failed for {name}: {e}")
+                continue
+
+        # ── Text files: decode directly ──
+        if name_lower.endswith(".txt") or media_type == "text/plain":
+            try:
+                raw = base64.b64decode(b64data)
+                text = raw.decode("utf-8", errors="replace")
+                logging.info(f"  TXT decoded for {name}: {len(text)} chars")
+                content.append({"type": "text", "text": f"[קובץ טקסט: {name}]\n{text}"})
+                continue
+            except Exception as e:
+                logging.warning(f"  TXT extraction failed for {name}: {e}")
+                continue
+
         # ── PDF files: try text extraction first, fall back to Claude vision ──
         if media_type == "application/pdf" or name_lower.endswith(".pdf"):
             text_extracted = False
