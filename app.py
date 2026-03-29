@@ -2741,6 +2741,7 @@ def generate_demand_letter():
     client = _get_claude_client()
 
     plaintiff = data.get("plaintiff_name", "")
+    plaintiff_id = data.get("plaintiff_id", "")
     defendant = data.get("defendant_name", "")
     defendant_address = data.get("defendant_address", "")
     today_str = date.today().strftime("%d.%m.%Y")
@@ -2757,26 +2758,25 @@ def generate_demand_letter():
         lim_note = "\nאזהרות התיישנות:\n" + "\n".join(f"- {w}" for w in limitation_warnings)
 
     ai_prompt = (
-        f"כתוב מכתב התראה מקצועי בעברית רשמית ממשרד עורכי הדין לוין תלרז לטובת {plaintiff} "
-        f"הנשלח למעסיק {defendant}.\n\n"
-        f"כלול:\n"
-        f"1. כותרת מכתב עם תאריך: {today_str}\n"
-        f"2. פנייה לנמען: {defendant or '[שם המעסיק]'} {('| ' + defendant_address) if defendant_address else ''}\n"
-        f"3. פתיחה: הנדון: דרישה מוקדמת לתשלום זכויות העובד {plaintiff} — לפני נקיטת הליכים משפטיים\n"
-        f"4. פסקת פתיחה: הפנייה מטעם {plaintiff} המיוצג/ת על ידי משרדנו\n"
-        f"5. פירוט הרכיבים הבאים עם ציון החוק הרלוונטי לכל אחד:\n"
+        f"כתוב את גוף מכתב ההתראה (פסקאות ממוספרות בלבד) בעברית רשמית, "
+        f"ממשרד לוין תלרז עורכי דין, לטובת {plaintiff}, הנשלח למעסיק {defendant}.\n\n"
+        f"הוראות: כתוב אך ורק את גוף המכתב — 3 עד 5 פסקאות ממוספרות (1., 2., 3. ...). "
+        f"אל תכלול כותרת, תאריך, כתובת נמען, שורת הנדון, טבלת סכומים, פסקאות סיום או חתימה — "
+        f"אלו יתווספו בנפרד.\n\n"
+        f"פרטי המקרה:\n"
+        f"עובד/ת: {plaintiff}\n"
+        f"מעסיק: {defendant}\n"
+        f"רכיבי הדרישה:\n"
         f"{claims_lines}\n"
-        f"6. סה\"כ דרישה: {total:,.0f} ₪ קרן\n"
-        f"7. הדגש שבהיעדר תשלום תוך 14 ימים יוגשו הליכים משפטיים לבית הדין לעבודה\n"
-        f"8. אזהרה ספציפית לגבי פיצויי הלנת שכר לפי חוק הגנת השכר, תשי\"ח-1958 וריבית מיוחדת\n"
-        f"9. חתימה: משרד לוין תלרז, עורכי דין — דיני עבודה\n"
+        f"סה\"כ: {total:,.0f} ₪ קרן\n"
         f"{lim_note}\n\n"
-        f"כתוב את המכתב כולו בעברית רשמית ומקצועית. "
-        f"אל תוסיף כל מידע שאינו מצוין לעיל. "
-        f"הפנה לחוקים המדויקים: חוק פיצויי פיטורים תשכ\"ג-1963, חוק הגנת השכר תשי\"ח-1958, "
-        f"חוק חופשה שנתית תשי\"א-1951, חוק עבודה בשעות נוספות תשי\"א-1951, "
-        f"חוק פנסיה חובה תשס\"ח-2008.\n"
-        f"החזר את טקסט המכתב בלבד, ללא הסברים."
+        f"הנחיות סגנון:\n"
+        f"- טון: תקיף ומקצועי אך לא אגרסיבי (firm but professional, not aggressive)\n"
+        f"- עברית רשמית ומשפטית\n"
+        f"- הפנה לחוקים הרלוונטיים: חוק פיצויי פיטורים תשכ\"ג-1963, חוק הגנת השכר תשי\"ח-1958, "
+        f"חוק חופשה שנתית תשי\"א-1951, חוק עבודה בשעות נוספות תשי\"א-1951\n"
+        f"- אל תוסיף מידע שאינו מצוין\n\n"
+        f"החזר פסקאות גוף ממוספרות בלבד (1. ..., 2. ..., וכו'), ללא כל תוספת."
     )
 
     if client:
@@ -2828,84 +2828,201 @@ def generate_demand_letter():
         lines.append("משרד לוין תלרז, עורכי דין — דיני עבודה")
         letter_text = "\n".join(lines)
 
-    # Build DOCX
+    # Build DOCX — using same formatting engine as docx_generator_v2
     from docx import Document as _Doc
     from docx.shared import Pt as _Pt, RGBColor as _RGB
     from docx.enum.text import WD_ALIGN_PARAGRAPH as _ALIGN
     from docx.oxml.ns import qn as _qn
     from lxml import etree as _etree
+    from docx_generator_v2 import _setup_page as _v2_setup_page, _setup_styles as _v2_setup_styles
 
     doc = _Doc()
+    _v2_setup_page(doc)
+    _v2_setup_styles(doc)
 
-    # Page setup
-    for section in doc.sections:
-        sectPr = section._sectPr
-        pgSz = sectPr.find(_qn('w:pgSz'))
-        if pgSz is None:
-            pgSz = _etree.SubElement(sectPr, _qn('w:pgSz'))
-        pgSz.set(_qn('w:w'), '12240')
-        pgSz.set(_qn('w:h'), '15840')
-
-        pgMar = sectPr.find(_qn('w:pgMar'))
-        if pgMar is None:
-            pgMar = _etree.SubElement(sectPr, _qn('w:pgMar'))
-        pgMar.set(_qn('w:top'), '1134')
-        pgMar.set(_qn('w:right'), '1800')
-        pgMar.set(_qn('w:bottom'), '1276')
-        pgMar.set(_qn('w:left'), '1800')
-
-    def _set_rtl_para(para):
-        pPr = para._p.get_or_add_pPr()
-        bidi = _etree.SubElement(pPr, _qn('w:bidi'))
-        jc = pPr.find(_qn('w:jc'))
-        if jc is None:
-            jc = _etree.SubElement(pPr, _qn('w:jc'))
-        jc.set(_qn('w:val'), 'right')
-
-    def _add_para(text, bold=False, size=12, align="right", color=None, space_before=0, space_after=60):
+    def _dl_para(text, bold=False, size=12, align=_ALIGN.RIGHT, color=None,
+                 space_before=120, space_after=120, line=360):
+        """Add RTL paragraph matching docx_generator_v2 quality."""
         p = doc.add_paragraph()
-        _set_rtl_para(p)
+        p.alignment = align
         pPr = p._p.get_or_add_pPr()
-        sp = _etree.SubElement(pPr, _qn('w:spacing'))
+        if pPr.find(_qn('w:bidi')) is None:
+            _etree.SubElement(pPr, _qn('w:bidi'))
+        sp = pPr.find(_qn('w:spacing'))
+        if sp is None:
+            sp = _etree.SubElement(pPr, _qn('w:spacing'))
         sp.set(_qn('w:before'), str(space_before))
         sp.set(_qn('w:after'), str(space_after))
-        run = p.add_run(text)
-        run.bold = bold
-        run.font.name = "David"
-        run.font.size = _Pt(size)
-        if color:
-            r, g, b = int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
-            run.font.color.rgb = _RGB(r, g, b)
-        rPr = run._r.get_or_add_rPr()
-        rFonts = _etree.SubElement(rPr, _qn('w:rFonts'))
-        rFonts.set(_qn('w:ascii'), 'David')
-        rFonts.set(_qn('w:hAnsi'), 'David')
-        rFonts.set(_qn('w:cs'), 'David')
+        sp.set(_qn('w:line'), str(line))
+        sp.set(_qn('w:lineRule'), 'auto')
+        if text:
+            run = p.add_run(text)
+            run.bold = bold
+            run.font.name = 'David'
+            run.font.size = _Pt(size)
+            run.font.rtl = True
+            if color:
+                r, g, b = int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
+                run.font.color.rgb = _RGB(r, g, b)
+            rPr = run._r.get_or_add_rPr()
+            rFonts = rPr.find(_qn('w:rFonts'))
+            if rFonts is None:
+                rFonts = _etree.SubElement(rPr, _qn('w:rFonts'))
+            rFonts.set(_qn('w:ascii'), 'David')
+            rFonts.set(_qn('w:hAnsi'), 'David')
+            rFonts.set(_qn('w:cs'), 'David')
+            rFonts.set(_qn('w:eastAsia'), 'David')
+            szCs = rPr.find(_qn('w:szCs'))
+            if szCs is None:
+                szCs = _etree.SubElement(rPr, _qn('w:szCs'))
+            szCs.set(_qn('w:val'), str(size * 2))
+            if rPr.find(_qn('w:rtl')) is None:
+                _etree.SubElement(rPr, _qn('w:rtl'))
+            lang = rPr.find(_qn('w:lang'))
+            if lang is None:
+                lang = _etree.SubElement(rPr, _qn('w:lang'))
+            lang.set(_qn('w:bidi'), 'he-IL')
         return p
 
-    # Firm header
-    hdr_p = _add_para("משרד לוין תלרז — עורכי דין | דיני עבודה", bold=True, size=14, color="1A365D", space_before=0, space_after=40)
-    _add_para("מכתב התראה לפני נקיטת הליכים משפטיים", bold=True, size=12, color="C6A04A", space_before=0, space_after=200)
+    def _dl_hrule():
+        """Horizontal divider paragraph."""
+        p = doc.add_paragraph()
+        pPr = p._p.get_or_add_pPr()
+        if pPr.find(_qn('w:bidi')) is None:
+            _etree.SubElement(pPr, _qn('w:bidi'))
+        sp = pPr.find(_qn('w:spacing'))
+        if sp is None:
+            sp = _etree.SubElement(pPr, _qn('w:spacing'))
+        sp.set(_qn('w:before'), '60')
+        sp.set(_qn('w:after'), '60')
+        pBdr = _etree.SubElement(pPr, _qn('w:pBdr'))
+        bottom = _etree.SubElement(pBdr, _qn('w:bottom'))
+        bottom.set(_qn('w:val'), 'single')
+        bottom.set(_qn('w:sz'), '6')
+        bottom.set(_qn('w:space'), '1')
+        bottom.set(_qn('w:color'), '1A365D')
 
-    # Horizontal rule via empty para with bottom border
-    rule_p = doc.add_paragraph()
-    pPr = rule_p._p.get_or_add_pPr()
-    pBdr = _etree.SubElement(pPr, _qn('w:pBdr'))
-    bottom = _etree.SubElement(pBdr, _qn('w:bottom'))
-    bottom.set(_qn('w:val'), 'single')
-    bottom.set(_qn('w:sz'), '6')
-    bottom.set(_qn('w:space'), '1')
-    bottom.set(_qn('w:color'), '1A365D')
+    # ── Letterhead ────────────────────────────────────────────────────────────
+    _dl_para("משרד לוין תלרז, עורכי דין", bold=True, size=14, color="1A365D",
+             space_before=0, space_after=40)
+    _dl_para("מגדלי הארבעה - מגדל דרומי, קומה 19 | רח' הארבעה 28, תל אביב",
+             size=10, color="555555", space_before=0, space_after=20)
+    _dl_para("טל: 054-3699782 | פקס: 076-5102966 | law@levin-telraz.co.il",
+             size=10, color="555555", space_before=0, space_after=60)
+    _dl_hrule()
 
-    # Letter body — split on newlines
-    for line in letter_text.split("\n"):
-        _add_para(line, size=12, space_before=0, space_after=60)
+    # ── Date ─────────────────────────────────────────────────────────────────
+    _dl_para(f"תאריך: {today_str}", size=12, space_before=120, space_after=60)
 
-    # Footer
-    _add_para("", space_before=200, space_after=0)
-    _add_para("─────────────────────────────────────────────────────────", size=10, color="9E9E9E", space_before=0, space_after=20)
-    _add_para("משרד לוין תלרז, עורכי דין — דיני עבודה", bold=True, size=10, color="1A365D", space_before=0, space_after=20)
-    _add_para("כל הזכויות שמורות. מסמך זה הופק על ידי מערכת מחולל כתבי התביעה.", size=9, color="9E9E9E", space_before=0, space_after=0)
+    # ── Recipient ─────────────────────────────────────────────────────────────
+    _dl_para(f"לכבוד: {defendant or '[שם המעסיק]'}", bold=True, size=12,
+             space_before=60, space_after=40)
+    if defendant_address:
+        _dl_para(defendant_address, size=12, space_before=0, space_after=40)
+    _dl_para("", space_before=40, space_after=40)
+
+    # ── Subject & Reference ───────────────────────────────────────────────────
+    _dl_para("הנדון: דרישה לתשלום זכויות עבודה", bold=True, size=12,
+             space_before=60, space_after=40)
+    ref_text = f"סימוכין: {plaintiff}"
+    if plaintiff_id:
+        ref_text += f" ת.ז. {plaintiff_id}"
+    _dl_para(ref_text, size=12, space_before=0, space_after=120)
+    _dl_hrule()
+
+    # ── AI Body Text ──────────────────────────────────────────────────────────
+    _dl_para("", space_before=60, space_after=60)
+    for line in (letter_text or "").split("\n"):
+        line = line.strip()
+        if not line:
+            _dl_para("", space_before=40, space_after=40)
+        else:
+            _dl_para(line, size=12, space_before=60, space_after=60)
+
+    # ── Amounts Table ──────────────────────────────────────────────────────────
+    _dl_para("", space_before=60, space_after=60)
+    _dl_para("פירוט רכיבי הדרישה", bold=True, size=12,
+             space_before=120, space_after=60)
+
+    tbl = doc.add_table(rows=1, cols=2)
+    tbl.style = 'Table Grid'
+    # Header row
+    hdr_row = tbl.rows[0]
+    for cell, txt in zip(hdr_row.cells, ["רכיב", "סכום (₪)"]):
+        cell.text = ""
+        p = cell.paragraphs[0]
+        p.alignment = _ALIGN.RIGHT
+        pPr = p._p.get_or_add_pPr()
+        if pPr.find(_qn('w:bidi')) is None:
+            _etree.SubElement(pPr, _qn('w:bidi'))
+        run = p.add_run(txt)
+        run.bold = True
+        run.font.name = 'David'
+        run.font.size = _Pt(11)
+        run.font.rtl = True
+        rPr = run._r.get_or_add_rPr()
+        lang = _etree.SubElement(rPr, _qn('w:lang'))
+        lang.set(_qn('w:bidi'), 'he-IL')
+
+    for c in claims.values():
+        row = tbl.add_row()
+        for cell, txt in zip(row.cells, [c['name'], f"{c['amount']:,.0f}"]):
+            cell.text = ""
+            p = cell.paragraphs[0]
+            p.alignment = _ALIGN.RIGHT
+            pPr = p._p.get_or_add_pPr()
+            if pPr.find(_qn('w:bidi')) is None:
+                _etree.SubElement(pPr, _qn('w:bidi'))
+            run = p.add_run(txt)
+            run.font.name = 'David'
+            run.font.size = _Pt(11)
+            run.font.rtl = True
+            rPr = run._r.get_or_add_rPr()
+            lang = _etree.SubElement(rPr, _qn('w:lang'))
+            lang.set(_qn('w:bidi'), 'he-IL')
+
+    # Total row
+    total_row = tbl.add_row()
+    for cell, txt in zip(total_row.cells, [f"סה\"כ דרישה (קרן)", f"{total:,.0f}"]):
+        cell.text = ""
+        p = cell.paragraphs[0]
+        p.alignment = _ALIGN.RIGHT
+        pPr = p._p.get_or_add_pPr()
+        if pPr.find(_qn('w:bidi')) is None:
+            _etree.SubElement(pPr, _qn('w:bidi'))
+        run = p.add_run(txt)
+        run.bold = True
+        run.font.name = 'David'
+        run.font.size = _Pt(11)
+        run.font.rtl = True
+        rPr = run._r.get_or_add_rPr()
+        lang = _etree.SubElement(rPr, _qn('w:lang'))
+        lang.set(_qn('w:bidi'), 'he-IL')
+
+    _dl_para("", space_before=120, space_after=60)
+
+    # ── Deadline & Warning ────────────────────────────────────────────────────
+    _dl_para(
+        "הנכם נדרשים לשלם את מלוא הסכומים המפורטים לעיל בתוך 14 ימים מקבלת מכתב זה. "
+        "בהיעדר תשלום בתוך המועד האמור, יוגשו הליכים משפטיים לבית הדין האזורי לעבודה "
+        "ללא כל התראה נוספת.",
+        size=12, space_before=120, space_after=120
+    )
+    _dl_para(
+        "יובהר כי אי-תשלום שכר עלול לחייבכם בפיצויי הלנת שכר לפי סעיפים 17-20 "
+        "לחוק הגנת השכר, תשי\"ח-1958, העשויים להגיע לפי 20% מהשכר המולן לחודש הראשון "
+        "ו-50% לכל חודש נוסף, בנוסף לריבית מיוחדת.",
+        size=12, space_before=60, space_after=180
+    )
+    _dl_hrule()
+
+    # ── Signature ─────────────────────────────────────────────────────────────
+    _dl_para("בכבוד רב,", size=12, space_before=120, space_after=60)
+    _dl_para("משרד לוין תלרז, עורכי דין", bold=True, size=12,
+             space_before=0, space_after=40)
+    _dl_para("דיני עבודה", size=12, space_before=0, space_after=20)
+    _dl_para("טל: 054-3699782 | law@levin-telraz.co.il",
+             size=10, color="555555", space_before=0, space_after=0)
 
     buf = io.BytesIO()
     doc.save(buf)

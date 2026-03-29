@@ -638,7 +638,11 @@
         </div>
         <div class="step" onclick="goToStep(5)" data-step="5">
             <span class="step-number">5</span>
-            <span>תוצאות וכתב תביעה</span>
+            <span>מכתב התראה</span>
+        </div>
+        <div class="step" onclick="goToStep(6)" data-step="6">
+            <span class="step-number">6</span>
+            <span>כתב תביעה</span>
         </div>
     </div>
 
@@ -1096,7 +1100,7 @@
 
         <div class="loading" id="loading">
             <div class="spinner"></div>
-            <p id="loading-text">מחשב ומייצר את כתב התביעה...</p>
+            <p id="loading-text">מחשב סכומים ומנתח תיק...</p>
             <!-- AI Progress stages (shown only for AI generation) -->
             <div id="ai-progress" style="display:none; max-width: 400px; margin: 1rem auto 0; text-align: right;">
                 <div style="background: var(--border); border-radius: 8px; height: 6px; overflow: hidden; margin-bottom: 0.8rem;">
@@ -1190,72 +1194,95 @@
                 <div id="limitation-expired-warning" style="display:none; margin-top:0.8rem; padding:0.7rem 1rem; background:#ffebee; border-right:4px solid #f44336; border-radius:6px; color:#b71c1c; font-size:0.9rem; direction:rtl;"></div>
             </div>
 
-            <!-- AI Preview Panel (only shown for AI mode) -->
-            <div class="card" id="ai-preview-panel" style="display:none; border: 2px solid var(--accent); background: #fffdf5;">
-                <h2 style="color: var(--primary); border-bottom-color: var(--accent);">תצוגה מקדימה — AI</h2>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
-                    <!-- Sections list -->
-                    <div>
-                        <h3 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.5rem;">סעיפים שנוצרו</h3>
-                        <ul id="preview-sections" style="list-style: none; padding: 0; font-size: 0.85rem;"></ul>
-                    </div>
-                    <!-- Appendices -->
-                    <div>
-                        <h3 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.5rem;">נספחים</h3>
-                        <ul id="preview-appendices" style="list-style: none; padding: 0; font-size: 0.85rem;"></ul>
-                    </div>
+            <!-- Demand Letter Action Card -->
+            <div class="card" style="border: 2px solid #e74c3c; background: #fff5f5;">
+                <h2 style="color: #c0392b;">שלב הבא: מכתב התראה</h2>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+                    לפני הגשת תביעה, מומלץ לשלוח מכתב התראה למעסיק.
+                    מרבית המקרים מסתיימים בהסדר לאחר קבלת מכתב התראה מקצועי.
+                </p>
+                <div class="btn-row" style="justify-content: flex-start;">
+                    <button class="btn" id="demand-letter-btn" onclick="downloadDemandLetter()"
+                        style="background: linear-gradient(135deg, #c0392b, #e74c3c); color: white; border: none; font-weight: bold;">
+                        📨 צור מכתב התראה
+                    </button>
                 </div>
-
-                <!-- Claims table with formulas -->
-                <h3 style="color: var(--primary); font-size: 1rem; margin: 1rem 0 0.5rem;">חישובים ונוסחאות</h3>
-                <table class="results-table" style="font-size: 0.85rem;">
-                    <thead>
-                        <tr>
-                            <th>רכיב</th>
-                            <th>נוסחה</th>
-                            <th>סכום (₪)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="preview-claims-tbody"></tbody>
-                </table>
-
-                <div id="preview-total" style="text-align: center; font-weight: bold; font-size: 1.1rem; color: var(--primary); margin-top: 0.5rem;"></div>
-
-                <!-- Verification notes -->
-                <div id="preview-verification" style="display:none; margin-top: 1rem; padding: 0.7rem; background: #f0f5ff; border-radius: 6px; font-size: 0.8rem;">
-                    <strong>הערות אימות:</strong>
-                    <ul id="preview-verification-list" style="margin: 0.3rem 0 0; padding-right: 1.2rem;"></ul>
+                <div id="demand-letter-loading" style="display:none; text-align:center; margin-top:0.5rem; font-size:0.9rem; color:var(--text-muted);">
+                    ⏳ מייצר מכתב התראה...
                 </div>
-
-                <!-- Timing -->
-                <div id="preview-timing" style="text-align: left; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;"></div>
-            </div>
-
-            <div class="card">
-                <div style="display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.5rem;">
-                    <h2 style="margin: 0;">כתב התביעה</h2>
-                    <span id="generation-mode-badge" style="display:none; padding: 0.2rem 0.7rem; border-radius: 12px; font-size: 0.8rem; font-weight: bold;"></span>
+                <div id="demand-letter-downloaded" style="display:none; margin-top:1rem; padding:0.8rem; background:#fff0f0; border-right:4px solid #e74c3c; border-radius:6px;">
+                    <p style="font-size:0.9rem; color:#c0392b; margin-bottom:0.5rem; font-weight:bold;">המכתב הופק. אם המעסיק לא הגיב תוך 14 ימים:</p>
+                    <button class="btn btn-primary" onclick="goToStep(6)"
+                        style="background: #c0392b; color: white; border: none; font-weight: bold;">
+                        המכתב לא הועיל — צור כתב תביעה
+                    </button>
                 </div>
-                <div class="claim-preview" id="claim-text-preview"></div>
             </div>
 
             <div class="btn-row">
                 <button class="btn btn-outline" onclick="goToStep(4)">חזרה לעריכה</button>
-                <button class="btn btn-accent" onclick="downloadDocx()">הורד כקובץ Word</button>
-                <button class="btn btn-primary" onclick="copyClaimText()">העתק טקסט</button>
-                <button class="btn" id="save-case-btn" onclick="saveCase()"
-                    style="background:#2c5282; color:white; border:none; font-weight:bold;">
-                    💾 שמור תיק
-                </button>
-                <button class="btn" id="demand-letter-btn" onclick="downloadDemandLetter()"
-                    style="background: linear-gradient(135deg, #c0392b, #e74c3c); color: white; border: none; font-weight: bold;">
-                    📨 צור מכתב התראה
-                </button>
+                <button class="btn btn-primary" onclick="goToStep(6)">דלג ועבור לכתב תביעה ←</button>
             </div>
-            <div id="demand-letter-loading" style="display:none; text-align:center; margin-top:0.5rem; font-size:0.9rem; color:var(--text-muted);">
-                ⏳ מייצר מכתב התראה...
+        </div>
+    </div>
+
+    <!-- Step 6: Claim Document -->
+    <div class="section-panel" id="step6">
+
+        <!-- AI Preview Panel (only shown for AI mode) -->
+        <div class="card" id="ai-preview-panel" style="display:none; border: 2px solid var(--accent); background: #fffdf5;">
+            <h2 style="color: var(--primary); border-bottom-color: var(--accent);">תצוגה מקדימה — AI</h2>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+                <div>
+                    <h3 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.5rem;">סעיפים שנוצרו</h3>
+                    <ul id="preview-sections" style="list-style: none; padding: 0; font-size: 0.85rem;"></ul>
+                </div>
+                <div>
+                    <h3 style="color: var(--primary); font-size: 1rem; margin-bottom: 0.5rem;">נספחים</h3>
+                    <ul id="preview-appendices" style="list-style: none; padding: 0; font-size: 0.85rem;"></ul>
+                </div>
             </div>
+
+            <h3 style="color: var(--primary); font-size: 1rem; margin: 1rem 0 0.5rem;">חישובים ונוסחאות</h3>
+            <table class="results-table" style="font-size: 0.85rem;">
+                <thead>
+                    <tr>
+                        <th>רכיב</th>
+                        <th>נוסחה</th>
+                        <th>סכום (₪)</th>
+                    </tr>
+                </thead>
+                <tbody id="preview-claims-tbody"></tbody>
+            </table>
+
+            <div id="preview-total" style="text-align: center; font-weight: bold; font-size: 1.1rem; color: var(--primary); margin-top: 0.5rem;"></div>
+
+            <div id="preview-verification" style="display:none; margin-top: 1rem; padding: 0.7rem; background: #f0f5ff; border-radius: 6px; font-size: 0.8rem;">
+                <strong>הערות אימות:</strong>
+                <ul id="preview-verification-list" style="margin: 0.3rem 0 0; padding-right: 1.2rem;"></ul>
+            </div>
+
+            <div id="preview-timing" style="text-align: left; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;"></div>
+        </div>
+
+        <div class="card">
+            <div style="display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.5rem;">
+                <h2 style="margin: 0;">כתב התביעה</h2>
+                <span id="generation-mode-badge" style="display:none; padding: 0.2rem 0.7rem; border-radius: 12px; font-size: 0.8rem; font-weight: bold;"></span>
+            </div>
+            <div class="claim-preview" id="claim-text-preview"></div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-outline" onclick="goToStep(5)">חזרה לשלב מכתב ההתראה</button>
+            <button class="btn btn-outline" onclick="goToStep(4)">חזרה לעריכה</button>
+            <button class="btn btn-accent" onclick="downloadDocx()">הורד כקובץ Word</button>
+            <button class="btn btn-primary" onclick="copyClaimText()">העתק טקסט</button>
+            <button class="btn" id="save-case-btn" onclick="saveCase()"
+                style="background:#2c5282; color:white; border:none; font-weight:bold;">
+                💾 שמור תיק
+            </button>
         </div>
     </div>
 
@@ -1719,6 +1746,9 @@
         goToStep(5);
         document.getElementById('loading').classList.add('active');
         document.getElementById('results').style.display = 'none';
+        // Reset demand letter section for fresh calculation
+        const dlAfter = document.getElementById('demand-letter-downloaded');
+        if (dlAfter) dlAfter.style.display = 'none';
 
         lastData = data;
 
@@ -1885,7 +1915,7 @@
 
         goToStep(5);
         document.getElementById('loading').classList.add('active');
-        document.getElementById('loading-text').textContent = 'מייצר כתב תביעה באמצעות AI...';
+        document.getElementById('loading-text').textContent = 'מנתח תיק ומייצר כתב תביעה (AI)...';
         document.getElementById('results').style.display = 'none';
         startAiProgress();
 
@@ -2394,6 +2424,9 @@
             a.download = `מכתב_התראה_${lastData.plaintiff_name || 'demand'}.docx`;
             a.click();
             URL.revokeObjectURL(url);
+            // Show "letter didn't work" section after successful download
+            const afterEl = document.getElementById('demand-letter-downloaded');
+            if (afterEl) afterEl.style.display = 'block';
         } catch (e) {
             alert('שגיאה: ' + e.message);
         } finally {
