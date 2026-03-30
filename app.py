@@ -2262,6 +2262,11 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/demand-letter")
+def demand_letter_page():
+    return render_template("demand_letter.html")
+
+
 @app.route("/calculate", methods=["POST"])
 def calculate():
     data = request.json

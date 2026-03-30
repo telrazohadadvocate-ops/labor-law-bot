@@ -104,6 +104,74 @@
         .stage-bar-count { width:20px; text-align:left; color:var(--text); font-weight:600; }
 
         .empty-note { color:var(--text-muted); font-size:0.88rem; text-align:center; padding:1rem 0; }
+
+        /* Action Hero Section */
+        .action-hero {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            color: white;
+            box-shadow: 0 4px 20px rgba(26,54,93,0.25);
+        }
+        .action-hero h2 {
+            text-align: center;
+            font-size: 1.3rem;
+            margin-bottom: 1.4rem;
+            color: rgba(255,255,255,0.9);
+            font-weight: 400;
+            letter-spacing: 0.5px;
+        }
+        .hero-main-buttons {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        @media(max-width:700px) { .hero-main-buttons { grid-template-columns: 1fr; } }
+        .hero-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1.4rem 1rem;
+            border-radius: 14px;
+            text-decoration: none;
+            font-family: inherit;
+            font-weight: 700;
+            font-size: 1.05rem;
+            text-align: center;
+            transition: all 0.25s;
+            border: none;
+            cursor: pointer;
+            gap: 0.4rem;
+            min-height: 110px;
+        }
+        .hero-btn:hover { transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.25); }
+        .hero-btn-gold { background: linear-gradient(135deg, #c6a04a, #d4af37); color: #1a202c; }
+        .hero-btn-blue { background: linear-gradient(135deg, #3182ce, #4299e1); color: white; }
+        .hero-btn-green { background: linear-gradient(135deg, #38a169, #48bb78); color: white; }
+        .hero-btn .btn-icon { font-size: 2rem; }
+        .hero-btn .btn-title { font-size: 1.05rem; font-weight: 700; line-height: 1.2; }
+        .hero-btn .btn-desc { font-size: 0.78rem; font-weight: 400; opacity: 0.8; margin-top: 0.1rem; }
+        .hero-secondary-buttons {
+            display: flex;
+            gap: 0.8rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .hero-secondary-btn {
+            padding: 0.6rem 1.6rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.92rem;
+            font-weight: 600;
+            background: rgba(255,255,255,0.15);
+            color: rgba(255,255,255,0.92);
+            border: 1.5px solid rgba(255,255,255,0.35);
+            transition: all 0.2s;
+        }
+        .hero-secondary-btn:hover { background: rgba(255,255,255,0.28); color: white; }
     </style>
 </head>
 <body>
@@ -120,6 +188,32 @@
 </div>
 
 <div class="container">
+
+    <!-- Action Hero -->
+    <div class="action-hero">
+        <h2>מה תרצה לעשות היום?</h2>
+        <div class="hero-main-buttons">
+            <a href="/demand-letter" class="hero-btn hero-btn-gold">
+                <span class="btn-icon">📨</span>
+                <span class="btn-title">מכתב התראה</span>
+                <span class="btn-desc">דרישה לפני הגשת תביעה</span>
+            </a>
+            <a href="/" class="hero-btn hero-btn-blue">
+                <span class="btn-icon">⚖️</span>
+                <span class="btn-title">כתב תביעה</span>
+                <span class="btn-desc">הגשה לבית הדין לעבודה</span>
+            </a>
+            <a href="/?start=upload" class="hero-btn hero-btn-green">
+                <span class="btn-icon">📂</span>
+                <span class="btn-title">העלאת מסמכי לקוח</span>
+                <span class="btn-desc">מילוי אוטומטי מהמסמכים</span>
+            </a>
+        </div>
+        <div class="hero-secondary-buttons">
+            <a href="/dashboard" class="hero-secondary-btn">📋 לוח תיקים</a>
+            <a href="/history" class="hero-secondary-btn">📁 היסטוריית תיקים</a>
+        </div>
+    </div>
 
     <!-- Stats -->
     <div class="stats-grid">
@@ -147,23 +241,25 @@
 
     <div class="row2">
 
-        <!-- Quick Actions -->
+        <!-- Stage Breakdown (moved here from bottom row) -->
         <div class="card">
-            <h2>⚡ פעולות מהירות</h2>
-            <div class="actions-grid">
-                <a href="/" class="action-btn primary">
-                    <span class="icon">✍</span> כתב תביעה חדש
-                </a>
-                <a href="/dashboard" class="action-btn accent">
-                    <span class="icon">📋</span> לוח קנבן
-                </a>
-                <a href="/history" class="action-btn outline">
-                    <span class="icon">📁</span> היסטוריית תיקים
-                </a>
-                <a href="/history?export=1" class="action-btn outline">
-                    <span class="icon">📊</span> ייצוא Excel
-                </a>
-            </div>
+            <h2>📊 פילוח שלבים (תיקים פעילים)</h2>
+            {% if active > 0 %}
+                {% for stage in stages %}
+                    {% set cnt = stage_counts.get(stage, 0) %}
+                    {% if cnt > 0 %}
+                    <div class="stage-bar-row">
+                        <div class="stage-bar-label" title="{{ stage }}">{{ stage }}</div>
+                        <div class="stage-bar-track">
+                            <div class="stage-bar-fill" style="width:{{ (cnt / active * 100)|int }}%;"></div>
+                        </div>
+                        <div class="stage-bar-count">{{ cnt }}</div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                <p class="empty-note">אין תיקים פעילים</p>
+            {% endif %}
         </div>
 
         <!-- Upcoming Deadlines -->
@@ -188,53 +284,29 @@
 
     </div>
 
-    <div class="row2">
-
-        <!-- Stage Breakdown -->
-        <div class="card">
-            <h2>📊 פילוח שלבים (תיקים פעילים)</h2>
-            {% if active > 0 %}
-                {% for stage in stages %}
-                    {% set cnt = stage_counts.get(stage, 0) %}
-                    {% if cnt > 0 %}
-                    <div class="stage-bar-row">
-                        <div class="stage-bar-label" title="{{ stage }}">{{ stage }}</div>
-                        <div class="stage-bar-track">
-                            <div class="stage-bar-fill" style="width:{{ (cnt / active * 100)|int }}%;"></div>
-                        </div>
-                        <div class="stage-bar-count">{{ cnt }}</div>
-                    </div>
-                    {% endif %}
-                {% endfor %}
-            {% else %}
-                <p class="empty-note">אין תיקים פעילים</p>
-            {% endif %}
-        </div>
-
-        <!-- Recent Activity -->
-        <div class="card">
-            <h2>🕐 פעילות אחרונה</h2>
-            {% if recent %}
-                {% for c in recent %}
-                <div class="recent-item">
-                    <div>
-                        <div style="font-weight:600;color:var(--primary);">{{ c.plaintiff_name or '—' }}</div>
-                        <div style="font-size:0.78rem;color:var(--text-muted);">{{ (c.updated_at or '')[:10] }} | נגד {{ c.defendant_name or '—' }}</div>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:0.5rem;">
-                        {% if c.total_amount %}
-                        <span class="amount-tag">{{ "{:,.0f}".format(c.total_amount) }} ₪</span>
-                        {% endif %}
-                        <span class="stage-pill">{{ c.stage or 'קליטה' }}</span>
-                    </div>
+    <!-- Recent Activity -->
+    <div class="card" style="margin-bottom:1rem;">
+        <h2>🕐 פעילות אחרונה</h2>
+        {% if recent %}
+            {% for c in recent %}
+            <div class="recent-item">
+                <div>
+                    <div style="font-weight:600;color:var(--primary);">{{ c.plaintiff_name or '—' }}</div>
+                    <div style="font-size:0.78rem;color:var(--text-muted);">{{ (c.updated_at or '')[:10] }} | נגד {{ c.defendant_name or '—' }}</div>
                 </div>
-                {% endfor %}
-            {% else %}
-                <p class="empty-note">אין תיקים עדיין</p>
-            {% endif %}
-        </div>
-
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    {% if c.total_amount %}
+                    <span class="amount-tag">{{ "{:,.0f}".format(c.total_amount) }} ₪</span>
+                    {% endif %}
+                    <span class="stage-pill">{{ c.stage or 'קליטה' }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="empty-note">אין תיקים עדיין</p>
+        {% endif %}
     </div>
+
 
 </div>
 </body>

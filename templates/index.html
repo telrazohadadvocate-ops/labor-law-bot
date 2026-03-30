@@ -610,8 +610,26 @@
                     </div>
                     <div class="btn-row">
                         <button class="btn btn-accent" onclick="startNewBatch()">העלה קבצים נוספים</button>
-                        <button class="btn btn-success" onclick="confirmExtraction()">סיים העלאה והמשך למילוי הטופס</button>
+                        <button class="btn btn-success" onclick="confirmExtraction()">סיים העלאה — בחר מסמך ליצירה</button>
                         <button class="btn btn-outline" onclick="skipToManual()">דלג ומלא ידנית</button>
+                    </div>
+
+                    <!-- Post-upload choice -->
+                    <div id="post-upload-choice" style="display:none; margin-top:1.5rem; text-align:center;">
+                        <h3 style="color:var(--primary); margin-bottom:0.5rem; font-size:1.1rem;">מה תרצה ליצור?</h3>
+                        <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:1.2rem;">המסמכים נותחו בהצלחה. בחר את סוג המסמך שתרצה לייצר:</p>
+                        <div style="display:flex; gap:1rem; justify-content:center; flex-wrap:wrap;">
+                            <button onclick="chooseFlowAfterUpload('demand')"
+                                style="padding:1rem 2rem; border-radius:12px; border:none; cursor:pointer; font-family:inherit; font-size:1rem; font-weight:700; background:linear-gradient(135deg,#c6a04a,#d4af37); color:#1a202c; min-width:200px; transition:all 0.2s;"
+                                onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+                                📨 מכתב התראה
+                            </button>
+                            <button onclick="chooseFlowAfterUpload('claim')"
+                                style="padding:1rem 2rem; border-radius:12px; border:none; cursor:pointer; font-family:inherit; font-size:1rem; font-weight:700; background:linear-gradient(135deg,#3182ce,#4299e1); color:white; min-width:200px; transition:all 0.2s;"
+                                onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+                                ⚖️ כתב תביעה
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1503,9 +1521,30 @@
 
     function confirmExtraction() {
         applyExtractedData();
-        document.getElementById('step0').classList.remove('active');
-        document.getElementById('main-stepper').style.display = 'flex';
-        goToStep(1);
+        // Show "what to create?" choice instead of going straight to step 1
+        document.getElementById('upload-zone-wrapper').style.display = 'none';
+        document.getElementById('extraction-results').style.display = 'none';
+        const choicePanel = document.getElementById('post-upload-choice');
+        if (choicePanel) {
+            choicePanel.style.display = 'block';
+        } else {
+            // Fallback: go straight to claim flow
+            document.getElementById('step0').classList.remove('active');
+            document.getElementById('main-stepper').style.display = 'flex';
+            goToStep(1);
+        }
+    }
+
+    function chooseFlowAfterUpload(flow) {
+        applyExtractedData();
+        saveFormDataToStorage();
+        if (flow === 'demand') {
+            window.location.href = '/demand-letter?restore=1';
+        } else {
+            document.getElementById('step0').classList.remove('active');
+            document.getElementById('main-stepper').style.display = 'flex';
+            goToStep(1);
+        }
     }
 
     // ── End Step 0 functions ───────────────────────────────────────
@@ -1751,6 +1790,7 @@
         if (dlAfter) dlAfter.style.display = 'none';
 
         lastData = data;
+        saveFormDataToStorage();
 
         try {
             const resp = await fetch('/calculate', {
@@ -1920,6 +1960,7 @@
         startAiProgress();
 
         data.raw_text = rawFacts;
+        saveFormDataToStorage();
 
         // Append missing evidence warnings to raw_text so Claude is aware
         const missingEvidence = getMissingEvidenceWarnings();
@@ -2442,11 +2483,83 @@
         });
     }
 
-    // Initialize checkbox visual state
+    // ── Shared Form Data (localStorage) ──────────────────────────────────────
+
+    const LS_KEY = 'lt_form_data';
+
+    function saveFormDataToStorage() {
+        try {
+            const data = collectData();
+            localStorage.setItem(LS_KEY, JSON.stringify(data));
+        } catch(e) {}
+    }
+
+    function loadFormDataFromStorage() {
+        try {
+            const raw = localStorage.getItem(LS_KEY);
+            if (!raw) return;
+            const data = JSON.parse(raw);
+            const textFields = [
+                'plaintiff_name','plaintiff_id','birth_year','plaintiff_address',
+                'defendant_name','defendant_id','defendant_owner','defendant_business','defendant_address',
+                'start_date','end_date','job_title','work_schedule',
+                'base_salary','commissions','court_header','attorney_name','attorney_id',
+                'firm_name','firm_address','firm_phone','firm_fax','firm_email',
+                'narrative','raw_facts_input',
+                'severance_deposited','section14_rate','unpaid_salary_amount',
+                'weekly_overtime_125','weekly_overtime_150',
+                'hourly_wage','standard_daily_hours','actual_daily_hours','global_ot_hours',
+                'pension_deposited','vacation_days_paid','vacation_rate_paid',
+                'holiday_days_paid','holiday_rate_paid','recuperation_days_paid',
+                'salary_delay_amount','emotional_amount','deduction_amount',
+            ];
+            const selectFields = ['gender','defendant_type','termination_type','work_days_per_week','hours_per_day'];
+            const checkFields = [
+                'claim_severance','claim_prior_notice','claim_unpaid_salary','claim_overtime',
+                'claim_pension','claim_vacation','claim_holidays','claim_recuperation',
+                'claim_salary_delay','claim_emotional','claim_deductions','claim_documents',
+                'section14_arrangement',
+            ];
+
+            for (const f of textFields) {
+                const el = document.getElementById(f);
+                if (el && data[f] !== undefined && data[f] !== null) el.value = data[f];
+            }
+            for (const f of selectFields) {
+                const el = document.getElementById(f);
+                if (el && data[f]) el.value = data[f];
+            }
+            for (const f of checkFields) {
+                const el = document.getElementById(f);
+                if (el && data[f] !== undefined) {
+                    el.checked = !!data[f];
+                    const item = el.closest('.checkbox-item');
+                    if (item) item.classList.toggle('checked', !!data[f]);
+                }
+            }
+            // Restore additional defendants
+            if (Array.isArray(data.additional_defendants)) {
+                data.additional_defendants.forEach(d => addDefendant(d));
+            }
+        } catch(e) {}
+    }
+
+    // Initialize checkbox visual state and handle URL params
     document.addEventListener('DOMContentLoaded', () => {
         document.querySelectorAll('.checkbox-item input[type="checkbox"]').forEach(cb => {
             if (cb.checked) cb.closest('.checkbox-item').classList.add('checked');
         });
+
+        // Load shared form data from localStorage if restoring
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('restore') === '1') {
+            loadFormDataFromStorage();
+        }
+
+        // Auto-show upload area if ?start=upload
+        if (params.get('start') === 'upload') {
+            document.getElementById('upload-area').style.display = 'block';
+        }
     });
 </script>
 

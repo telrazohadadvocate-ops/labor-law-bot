@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מכתב התראה | לוין תלרז</title>
+    <style>
+        :root {
+            --primary: #1a365d;
+            --primary-light: #2c5282;
+            --accent: #c6a04a;
+            --bg: #f7f8fa;
+            --card: #ffffff;
+            --text: #1a202c;
+            --text-muted: #718096;
+            --border: #e2e8f0;
+            --success: #38a169;
+            --danger: #e53e3e;
+            --gold: #c6a04a;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', 'David', Arial, sans-serif; background: var(--bg); color: var(--text); direction: rtl; line-height: 1.6; }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            color: white; padding: 1.2rem 2rem;
+            display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;
+        }
+        .header h1 { font-size: 1.4rem; }
+        .header-nav { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
+        .header-nav a {
+            color: rgba(255,255,255,0.88); text-decoration: none; font-size: 0.88rem;
+            padding: 0.3rem 0.8rem; border: 1px solid rgba(255,255,255,0.4); border-radius: 6px; transition: all 0.2s;
+        }
+        .header-nav a:hover { background: rgba(255,255,255,0.15); color: white; }
+
+        .container { max-width: 900px; margin: 2rem auto; padding: 0 1.5rem; }
+
+        .stepper {
+            display: flex; justify-content: center; gap: 0; margin-bottom: 2rem; flex-wrap: wrap;
+        }
+        .step {
+            display: flex; align-items: center; gap: 0.5rem;
+            padding: 0.7rem 1.2rem; background: var(--card);
+            border: 2px solid var(--border); cursor: pointer; transition: all 0.3s; font-size: 0.9rem;
+        }
+        .step:first-child { border-radius: 0 8px 8px 0; }
+        .step:last-child { border-radius: 8px 0 0 8px; }
+        .step.active { background: var(--gold); color: #1a202c; border-color: var(--gold); }
+        .step.completed { background: var(--success); color: white; border-color: var(--success); }
+        .step-number {
+            width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; font-weight: bold; font-size: 0.8rem; background: rgba(0,0,0,0.12);
+        }
+
+        .card {
+            background: var(--card); border-radius: 12px; padding: 2rem;
+            margin-bottom: 1.5rem; box-shadow: 0 1px 8px rgba(0,0,0,0.06); border: 1px solid var(--border);
+        }
+        .card h2 {
+            color: var(--primary); margin-bottom: 1.2rem; padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--gold); font-size: 1.2rem;
+        }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        @media(max-width:640px) { .form-grid { grid-template-columns: 1fr; } }
+        .form-group { margin-bottom: 0.8rem; }
+        .form-group.full-width { grid-column: 1 / -1; }
+        .form-group label { display: block; margin-bottom: 0.3rem; font-weight: 600; font-size: 0.9rem; color: var(--primary); }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%; padding: 0.6rem 0.8rem; border: 1.5px solid var(--border);
+            border-radius: 8px; font-size: 0.95rem; direction: rtl; transition: border-color 0.2s; font-family: inherit;
+        }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(198,160,74,0.15);
+        }
+
+        .section-panel { display: none; }
+        .section-panel.active { display: block; }
+
+        .btn-row { display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem; flex-wrap: wrap; }
+        .btn {
+            padding: 0.7rem 2rem; border: none; border-radius: 8px;
+            font-size: 1rem; cursor: pointer; font-weight: 600; transition: all 0.2s; font-family: inherit;
+        }
+        .btn-gold { background: linear-gradient(135deg, var(--gold), #d4af37); color: #1a202c; }
+        .btn-gold:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-light); }
+        .btn-outline { background: transparent; color: var(--primary); border: 2px solid var(--primary); }
+        .btn-outline:hover { background: var(--primary); color: white; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-success:hover { opacity: 0.9; }
+
+        /* Claim items */
+        .claim-checkbox-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+        @media(max-width:640px) { .claim-checkbox-grid { grid-template-columns: 1fr; } }
+        .claim-item {
+            display: flex; align-items: center; gap: 0.5rem;
+            padding: 0.6rem 0.8rem; background: var(--bg); border-radius: 8px;
+            cursor: pointer; transition: background 0.2s; border: 1.5px solid transparent;
+        }
+        .claim-item:hover { background: #edf2f7; }
+        .claim-item.checked { border-color: var(--gold); background: #fffdf0; }
+        .claim-item input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--gold); }
+        .claim-item label { cursor: pointer; font-size: 0.9rem; }
+
+        .claim-detail-row {
+            display: none; margin-top: 0.3rem; padding: 0.7rem 1rem;
+            background: #fffdf5; border-right: 3px solid var(--gold);
+            border-radius: 0 0 8px 8px; grid-column: 1 / -1;
+        }
+        .claim-detail-row.visible { display: block; }
+        .claim-detail-row label { font-size: 0.85rem; color: var(--text-muted); display: block; margin-bottom: 0.3rem; }
+        .claim-detail-row input {
+            width: 200px; padding: 0.45rem 0.7rem; border: 1.5px solid var(--border);
+            border-radius: 6px; font-size: 0.9rem; direction: rtl; font-family: inherit;
+        }
+        .claim-detail-row input:focus { outline: none; border-color: var(--gold); }
+        .auto-calc-note { font-size: 0.82rem; color: var(--success); font-style: italic; }
+
+        /* Result */
+        .result-card { border: 2px solid var(--gold); background: #fffdf5; }
+        .result-card h2 { border-bottom-color: var(--gold); }
+        .result-summary { background: linear-gradient(135deg, var(--primary), var(--primary-light)); color: white; border-radius: 10px; padding: 1.2rem 1.5rem; margin-bottom: 1rem; text-align: center; }
+        .result-summary .total-amount { font-size: 2.2rem; font-weight: 800; }
+        .result-summary .total-label { font-size: 0.9rem; opacity: 0.85; }
+        .claims-summary-table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        .claims-summary-table th, .claims-summary-table td { padding: 0.55rem 0.9rem; text-align: right; border-bottom: 1px solid var(--border); }
+        .claims-summary-table th { background: var(--primary); color: white; }
+
+        .loading { display: none; text-align: center; padding: 2rem; }
+        .loading.active { display: block; }
+        .spinner { width: 40px; height: 40px; border: 4px solid var(--border); border-top-color: var(--gold); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .info-box { background: #fffff0; border: 1px solid #f6e05e; border-radius: 8px; padding: 0.9rem; margin-bottom: 1rem; font-size: 0.85rem; color: #744210; }
+
+        .switch-flow-box {
+            background: #f0f5ff; border: 1.5px solid #c3dafe; border-radius: 10px;
+            padding: 1rem 1.2rem; text-align: center; margin-top: 1rem;
+        }
+        .switch-flow-box p { font-size: 0.88rem; color: var(--text-muted); margin-bottom: 0.6rem; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div>
+        <h1>📨 מכתב התראה — לוין תלרז</h1>
+    </div>
+    <div class="header-nav">
+        <a href="/home">🏠 בית</a>
+        <a href="/">⚖️ כתב תביעה</a>
+        <a href="/dashboard">📋 לוח תיקים</a>
+        <a href="/history">📂 היסטוריה</a>
+        <a href="/logout">יציאה</a>
+    </div>
+</div>
+
+<div class="container">
+
+    <!-- Stepper -->
+    <div class="stepper">
+        <div class="step active" data-step="1" onclick="goToStep(1)">
+            <span class="step-number">1</span><span>פרטי הצדדים</span>
+        </div>
+        <div class="step" data-step="2" onclick="goToStep(2)">
+            <span class="step-number">2</span><span>תנאי העסקה</span>
+        </div>
+        <div class="step" data-step="3" onclick="goToStep(3)">
+            <span class="step-number">3</span><span>רכיבי התביעה</span>
+        </div>
+    </div>
+
+    <!-- Step 1: Party Details -->
+    <div class="section-panel active" id="dl-step1">
+        <div class="card">
+            <h2>פרטי התובע/ת</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>שם מלא</label>
+                    <input type="text" id="dl_plaintiff_name" placeholder="שם פרטי ומשפחה">
+                </div>
+                <div class="form-group">
+                    <label>מספר תעודת זהות</label>
+                    <input type="text" id="dl_plaintiff_id" placeholder="מספר ת.ז.">
+                </div>
+                <div class="form-group">
+                    <label>מגדר</label>
+                    <select id="dl_gender">
+                        <option value="male">זכר</option>
+                        <option value="female">נקבה</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>שנת לידה</label>
+                    <input type="number" id="dl_birth_year" placeholder="למשל: 1985">
+                </div>
+                <div class="form-group full-width">
+                    <label>כתובת מגורים</label>
+                    <input type="text" id="dl_plaintiff_address" placeholder="למשל: הרצל 10, תל אביב">
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>פרטי הנתבע/ת (המעסיק)</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>שם הנתבע/החברה</label>
+                    <input type="text" id="dl_defendant_name" placeholder="שם החברה או המעסיק">
+                </div>
+                <div class="form-group">
+                    <label>ח.פ. / ע.מ.</label>
+                    <input type="text" id="dl_defendant_id" placeholder="מספר חברה או עוסק">
+                </div>
+                <div class="form-group">
+                    <label>סוג נתבע</label>
+                    <select id="dl_defendant_type">
+                        <option value="company">חברה בע"מ</option>
+                        <option value="authorized_dealer">עוסק מורשה</option>
+                        <option value="individual">אדם פרטי</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>בעלים/מנהל</label>
+                    <input type="text" id="dl_defendant_owner" placeholder="שם הבעלים או המנהל">
+                </div>
+                <div class="form-group full-width">
+                    <label>כתובת הנתבע/ת</label>
+                    <input type="text" id="dl_defendant_address" placeholder="למשל: הכישור 23, אשקלון">
+                </div>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <a href="/home" class="btn btn-outline">חזרה לדף הבית</a>
+            <button class="btn btn-gold" onclick="goToStep(2)">המשך לתנאי העסקה ←</button>
+        </div>
+    </div>
+
+    <!-- Step 2: Employment Terms -->
+    <div class="section-panel" id="dl-step2">
+        <div class="card">
+            <h2>פרטי העסקה</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>תאריך תחילת עבודה</label>
+                    <input type="date" id="dl_start_date">
+                </div>
+                <div class="form-group">
+                    <label>תאריך סיום עבודה</label>
+                    <input type="date" id="dl_end_date">
+                </div>
+                <div class="form-group">
+                    <label>תפקיד</label>
+                    <input type="text" id="dl_job_title" placeholder="למשל: איש/אשת מכירות">
+                </div>
+                <div class="form-group">
+                    <label>אופן סיום העסקה</label>
+                    <select id="dl_termination_type">
+                        <option value="fired">פיטורים</option>
+                        <option value="resigned_justified">התפטרות בדין מפוטר</option>
+                        <option value="resigned">התפטרות רגילה</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>ימי עבודה בשבוע</label>
+                    <select id="dl_work_days_per_week">
+                        <option value="5">5 ימים</option>
+                        <option value="6">6 ימים</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>שעות עבודה ביום</label>
+                    <input type="number" step="0.5" id="dl_hours_per_day" value="9">
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>שכר ותנאים כספיים</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>שכר בסיס חודשי ברוטו (₪)</label>
+                    <input type="number" id="dl_base_salary" placeholder="למשל: 6370">
+                </div>
+                <div class="form-group">
+                    <label>עמלות/תוספות חודשיות ממוצעות (₪)</label>
+                    <input type="number" id="dl_commissions" value="0">
+                </div>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-outline" onclick="goToStep(1)">חזרה</button>
+            <button class="btn btn-gold" onclick="goToStep(3)">המשך לבחירת רכיבים ←</button>
+        </div>
+    </div>
+
+    <!-- Step 3: Claim Components + Generate -->
+    <div class="section-panel" id="dl-step3">
+        <div class="card">
+            <h2>בחירת רכיבי התביעה</h2>
+            <p style="color:var(--text-muted); margin-bottom:1rem; font-size:0.9rem;">
+                סמנו את הרכיבים הרלוונטיים. רכיבים מסומנים <span class="auto-calc-note">ירוק</span> מחושבים אוטומטית מנתוני ההעסקה.
+            </p>
+
+            <div class="claim-checkbox-grid" id="dl-claims-grid">
+
+                <div class="claim-item" onclick="dlToggleClaim(this, 'dl_claim_severance', 'dl_detail_severance')">
+                    <input type="checkbox" id="dl_claim_severance">
+                    <label for="dl_claim_severance">פיצויי פיטורים</label>
+                </div>
+                <div id="dl_detail_severance" class="claim-detail-row">
+                    <label>סכום שנצבר בקופה (₪) <span class="auto-calc-note">— יתרה תחושב אוטומטית</span></label>
+                    <input type="number" id="dl_severance_deposited" value="0" placeholder="0">
+                </div>
+
+                <div class="claim-item" onclick="dlToggleClaim(this, 'dl_claim_prior_notice', null)">
+                    <input type="checkbox" id="dl_claim_prior_notice">
+                    <label for="dl_claim_prior_notice">חלף הודעה מוקדמת <span class="auto-calc-note" style="font-size:0.78rem;">(אוטומטי)</span></label>
+                </div>
+
+                <div class="claim-item checked" onclick="dlToggleClaim(this, 'dl_claim_unpaid_salary', 'dl_detail_unpaid')">
+                    <input type="checkbox" id="dl_claim_unpaid_salary" checked>
+                    <label for="dl_claim_unpaid_salary">שכר שלא שולם</label>
+                </div>
+                <div id="dl_detail_unpaid" class="claim-detail-row visible">
+                    <label>סכום שכר שלא שולם (₪)</label>
+                    <input type="number" id="dl_unpaid_salary_amount" value="0">
+                </div>
+
+                <div class="claim-item" onclick="dlToggleClaim(this, 'dl_claim_overtime', 'dl_detail_overtime')">
+                    <input type="checkbox" id="dl_claim_overtime">
+                    <label for="dl_claim_overtime">שעות נוספות</label>
+                </div>
+                <div id="dl_detail_overtime" class="claim-detail-row">
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem;">
+                        <div>
+                            <label>שעות נוספות שבועיות (125%)</label>
+                            <input type="number" step="0.5" id="dl_weekly_overtime_125" value="0">
+                        </div>
+                        <div>
+                            <label>שעות נוספות שבועיות (150%)</label>
+                            <input type="number" step="0.5" id="dl_weekly_overtime_150" value="0">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="claim-item" onclick="dlToggleClaim(this, 'dl_claim_pension', 'dl_detail_pension')">
+                    <input type="checkbox" id="dl_claim_pension">
+                    <label for="dl_claim_pension">הפרשי הפרשות לפנסיה</label>
+                </div>
+                <div id="dl_detail_pension" class="claim-detail-row">
+                    <label>סכום שהופקד בפועל לפנסיה (₪) <span class="auto-calc-note">— הפרש יחושב אוטומטית</span></label>
+                    <input type="number" id="dl_pension_deposited" value="0">
+                </div>
+
+                <div class="claim-item" onclick="dlToggleClaim(this, 'dl_claim_vacation', null)">
+                    <input type="checkbox" id="dl_claim_vacation">
+                    <label for="dl_claim_vacation">חופשה ופדיון חופשה <span class="auto-calc-note" style="font-size:0.78rem;">(אוטומטי)</span></label>
+                </div>
+
+                <div class="claim-item" onclick="dlToggleClaim(this, 'dl_claim_holidays', null)">
+                    <input type="checkbox" id="dl_claim_holidays">
+                    <label for="dl_claim_holidays">דמי חגים <span class="auto-calc-note" style="font-size:0.78rem;">(אוטומטי)</span></label>
+                </div>
+
+                <div class="claim-item" onclick="dlToggleClaim(this, 'dl_claim_recuperation', null)">
+                    <input type="checkbox" id="dl_claim_recuperation">
+                    <label for="dl_claim_recuperation">דמי הבראה <span class="auto-calc-note" style="font-size:0.78rem;">(אוטומטי)</span></label>
+                </div>
+
+                <div class="claim-item" onclick="dlToggleClaim(this, 'dl_claim_salary_delay', 'dl_detail_delay')">
+                    <input type="checkbox" id="dl_claim_salary_delay">
+                    <label for="dl_claim_salary_delay">פיצויי הלנת שכר</label>
+                </div>
+                <div id="dl_detail_delay" class="claim-detail-row">
+                    <label>סכום פיצויי הלנה (₪)</label>
+                    <input type="number" id="dl_salary_delay_amount" value="0">
+                </div>
+
+                <div class="claim-item" onclick="dlToggleClaim(this, 'dl_claim_emotional', 'dl_detail_emotional')">
+                    <input type="checkbox" id="dl_claim_emotional">
+                    <label for="dl_claim_emotional">עוגמת נפש</label>
+                </div>
+                <div id="dl_detail_emotional" class="claim-detail-row">
+                    <label>סכום פיצוי מבוקש (₪)</label>
+                    <input type="number" id="dl_emotional_amount" value="25000">
+                </div>
+
+                <div class="claim-item" onclick="dlToggleClaim(this, 'dl_claim_deductions', 'dl_detail_deductions')">
+                    <input type="checkbox" id="dl_claim_deductions">
+                    <label for="dl_claim_deductions">ניכויים שלא כדין</label>
+                </div>
+                <div id="dl_detail_deductions" class="claim-detail-row">
+                    <label>סכום ניכויים שלא כדין (₪)</label>
+                    <input type="number" id="dl_deduction_amount" value="0">
+                </div>
+
+            </div>
+        </div>
+
+        <div class="card" style="border: 2px solid var(--gold); background: #fffdf5;">
+            <h2>הפקת מכתב ההתראה</h2>
+            <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:1rem;">
+                המערכת תחשב את הסכומים ותייצר מכתב התראה מקצועי בעברית, בפורמט Word, מוכן לשליחה למעסיק.
+            </p>
+
+            <div class="loading" id="dl-loading">
+                <div class="spinner"></div>
+                <p>מחשב סכומים ומייצר מכתב התראה...</p>
+            </div>
+
+            <div id="dl-result" style="display:none;">
+                <div class="result-summary">
+                    <div class="total-amount"><span id="dl-total-amount">0</span> ₪</div>
+                    <div class="total-label">סה"כ סכום הדרישה</div>
+                </div>
+                <table class="claims-summary-table">
+                    <thead><tr><th>רכיב</th><th>סכום (₪)</th></tr></thead>
+                    <tbody id="dl-claims-tbody"></tbody>
+                </table>
+                <div class="btn-row">
+                    <button class="btn btn-gold" id="dl-download-btn" onclick="downloadDemandLetter()">
+                        ⬇ הורד מכתב התראה (Word)
+                    </button>
+                </div>
+                <div id="dl-download-loading" style="display:none; text-align:center; margin-top:0.5rem; color:var(--text-muted); font-size:0.9rem;">⏳ מייצר קובץ...</div>
+
+                <!-- Switch to full claim -->
+                <div class="switch-flow-box" style="margin-top:1.2rem;">
+                    <p>המעסיק לא הגיב? רוצים להגיש תביעה?</p>
+                    <button class="btn btn-primary" onclick="switchToFullClaim()">
+                        ⚖️ המשך ליצירת כתב תביעה — הנתונים יועברו אוטומטית
+                    </button>
+                </div>
+            </div>
+
+            <div id="dl-generate-area">
+                <div class="btn-row">
+                    <button class="btn btn-outline" onclick="goToStep(2)">חזרה</button>
+                    <button class="btn btn-gold" onclick="generateDemandLetter()">
+                        📨 צור מכתב התראה
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    let dlCurrentStep = 1;
+    let dlLastData = null;
+    let dlLastCalc = null;
+    const LS_KEY = 'lt_form_data';
+
+    // ── Step navigation ───────────────────────────────────────────────────────
+
+    function goToStep(step) {
+        document.querySelectorAll('.section-panel').forEach(p => p.classList.remove('active'));
+        document.getElementById('dl-step' + step).classList.add('active');
+        document.querySelectorAll('.step').forEach(s => {
+            const n = parseInt(s.dataset.step);
+            s.classList.remove('active', 'completed');
+            if (n === step) s.classList.add('active');
+            else if (n < step) s.classList.add('completed');
+        });
+        dlCurrentStep = step;
+        window.scrollTo(0, 0);
+    }
+
+    // ── Claim toggle ──────────────────────────────────────────────────────────
+
+    function dlToggleClaim(itemEl, cbId, detailId) {
+        const cb = document.getElementById(cbId);
+        cb.checked = !cb.checked;
+        itemEl.classList.toggle('checked', cb.checked);
+        if (detailId) {
+            const detail = document.getElementById(detailId);
+            if (detail) detail.classList.toggle('visible', cb.checked);
+        }
+    }
+
+    // ── Collect form data ─────────────────────────────────────────────────────
+
+    function collectDLData() {
+        const g = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+        const cb = id => { const el = document.getElementById(id); return el ? el.checked : false; };
+        return {
+            plaintiff_name:    g('dl_plaintiff_name'),
+            plaintiff_id:      g('dl_plaintiff_id'),
+            gender:            g('dl_gender'),
+            birth_year:        g('dl_birth_year'),
+            plaintiff_address: g('dl_plaintiff_address'),
+            defendant_name:    g('dl_defendant_name'),
+            defendant_id:      g('dl_defendant_id'),
+            defendant_type:    g('dl_defendant_type'),
+            defendant_owner:   g('dl_defendant_owner'),
+            defendant_address: g('dl_defendant_address'),
+            start_date:        g('dl_start_date'),
+            end_date:          g('dl_end_date'),
+            job_title:         g('dl_job_title'),
+            termination_type:  g('dl_termination_type'),
+            work_days_per_week: g('dl_work_days_per_week'),
+            hours_per_day:     g('dl_hours_per_day'),
+            base_salary:       g('dl_base_salary'),
+            commissions:       g('dl_commissions'),
+            claim_severance:        cb('dl_claim_severance'),
+            claim_prior_notice:     cb('dl_claim_prior_notice'),
+            claim_unpaid_salary:    cb('dl_claim_unpaid_salary'),
+            claim_overtime:         cb('dl_claim_overtime'),
+            claim_pension:          cb('dl_claim_pension'),
+            claim_vacation:         cb('dl_claim_vacation'),
+            claim_holidays:         cb('dl_claim_holidays'),
+            claim_recuperation:     cb('dl_claim_recuperation'),
+            claim_salary_delay:     cb('dl_claim_salary_delay'),
+            claim_emotional:        cb('dl_claim_emotional'),
+            claim_deductions:       cb('dl_claim_deductions'),
+            severance_deposited:    g('dl_severance_deposited'),
+            unpaid_salary_amount:   g('dl_unpaid_salary_amount'),
+            weekly_overtime_125:    g('dl_weekly_overtime_125'),
+            weekly_overtime_150:    g('dl_weekly_overtime_150'),
+            pension_deposited:      g('dl_pension_deposited'),
+            salary_delay_amount:    g('dl_salary_delay_amount'),
+            emotional_amount:       g('dl_emotional_amount'),
+            deduction_amount:       g('dl_deduction_amount'),
+            // Attorney defaults
+            attorney_name: 'דורון לוין ו/או אוהד תלרז',
+            firm_name: 'לוין תלרז, משרד עורכי דין',
+            firm_address: 'מרח\' הארבעה 28, תל אביב, מגדלי הארבעה - מגדל דרומי, קומה 19',
+            firm_phone: '054-3699782',
+            firm_fax: '076-5102966',
+            firm_email: 'law@levin-telraz.co.il',
+        };
+    }
+
+    // ── localStorage ──────────────────────────────────────────────────────────
+
+    function saveDLDataToStorage() {
+        try { localStorage.setItem(LS_KEY, JSON.stringify(collectDLData())); } catch(e) {}
+    }
+
+    function loadFromStorage() {
+        try {
+            const raw = localStorage.getItem(LS_KEY);
+            if (!raw) return;
+            const d = JSON.parse(raw);
+            const map = {
+                plaintiff_name: 'dl_plaintiff_name', plaintiff_id: 'dl_plaintiff_id',
+                birth_year: 'dl_birth_year', plaintiff_address: 'dl_plaintiff_address',
+                defendant_name: 'dl_defendant_name', defendant_id: 'dl_defendant_id',
+                defendant_owner: 'dl_defendant_owner', defendant_address: 'dl_defendant_address',
+                start_date: 'dl_start_date', end_date: 'dl_end_date',
+                job_title: 'dl_job_title', base_salary: 'dl_base_salary',
+                commissions: 'dl_commissions',
+                severance_deposited: 'dl_severance_deposited',
+                unpaid_salary_amount: 'dl_unpaid_salary_amount',
+                weekly_overtime_125: 'dl_weekly_overtime_125',
+                weekly_overtime_150: 'dl_weekly_overtime_150',
+                pension_deposited: 'dl_pension_deposited',
+                salary_delay_amount: 'dl_salary_delay_amount',
+                emotional_amount: 'dl_emotional_amount',
+                deduction_amount: 'dl_deduction_amount',
+            };
+            for (const [src, dst] of Object.entries(map)) {
+                const el = document.getElementById(dst);
+                if (el && d[src] !== undefined && d[src] !== null && d[src] !== '') el.value = d[src];
+            }
+            // Selects
+            ['gender:dl_gender','defendant_type:dl_defendant_type',
+             'termination_type:dl_termination_type','work_days_per_week:dl_work_days_per_week',
+             'hours_per_day:dl_hours_per_day'].forEach(pair => {
+                const [src, dst] = pair.split(':');
+                const el = document.getElementById(dst);
+                if (el && d[src]) el.value = d[src];
+            });
+            // Checkboxes
+            ['claim_severance','claim_prior_notice','claim_unpaid_salary','claim_overtime',
+             'claim_pension','claim_vacation','claim_holidays','claim_recuperation',
+             'claim_salary_delay','claim_emotional','claim_deductions'].forEach(key => {
+                if (d[key] === undefined) return;
+                const el = document.getElementById('dl_' + key);
+                if (!el) return;
+                el.checked = !!d[key];
+                const item = el.closest('.claim-item');
+                if (item) {
+                    item.classList.toggle('checked', !!d[key]);
+                    const detailMap = {
+                        dl_claim_severance: 'dl_detail_severance',
+                        dl_claim_unpaid_salary: 'dl_detail_unpaid',
+                        dl_claim_overtime: 'dl_detail_overtime',
+                        dl_claim_pension: 'dl_detail_pension',
+                        dl_claim_salary_delay: 'dl_detail_delay',
+                        dl_claim_emotional: 'dl_detail_emotional',
+                        dl_claim_deductions: 'dl_detail_deductions',
+                    };
+                    const detailId = detailMap['dl_' + key];
+                    if (detailId) {
+                        const det = document.getElementById(detailId);
+                        if (det) det.classList.toggle('visible', !!d[key]);
+                    }
+                }
+            });
+        } catch(e) {}
+    }
+
+    // ── Generate demand letter ────────────────────────────────────────────────
+
+    async function generateDemandLetter() {
+        const data = collectDLData();
+
+        // Validation
+        const errors = [];
+        if (!data.start_date) errors.push('יש להזין תאריך תחילת עבודה');
+        if (!data.end_date) errors.push('יש להזין תאריך סיום עבודה');
+        if (data.start_date && data.end_date && data.start_date >= data.end_date)
+            errors.push('תאריך סיום חייב להיות מאוחר מתאריך התחלה');
+        if (!data.base_salary)
+            errors.push('יש להזין שכר בסיס');
+        const anySelected = ['claim_severance','claim_prior_notice','claim_unpaid_salary','claim_overtime',
+            'claim_pension','claim_vacation','claim_holidays','claim_recuperation',
+            'claim_salary_delay','claim_emotional','claim_deductions'].some(k => data[k]);
+        if (!anySelected) errors.push('יש לבחור לפחות רכיב תביעה אחד');
+
+        if (errors.length > 0) { alert(errors.join('\n')); return; }
+
+        dlLastData = data;
+        saveDLDataToStorage();
+
+        document.getElementById('dl-generate-area').style.display = 'none';
+        document.getElementById('dl-loading').classList.add('active');
+        document.getElementById('dl-result').style.display = 'none';
+
+        try {
+            // First calculate to get amounts summary
+            const calcResp = await fetch('/calculate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            const calcResult = await calcResp.json();
+
+            document.getElementById('dl-loading').classList.remove('active');
+
+            if (!calcResult.success) {
+                alert('שגיאה בחישוב: ' + calcResult.error);
+                document.getElementById('dl-generate-area').style.display = 'block';
+                return;
+            }
+
+            dlLastCalc = calcResult.calculations;
+
+            // Show summary
+            document.getElementById('dl-total-amount').textContent =
+                calcResult.calculations.total.toLocaleString();
+            const tbody = document.getElementById('dl-claims-tbody');
+            tbody.innerHTML = '';
+            for (const [key, claim] of Object.entries(calcResult.calculations.claims)) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${claim.name}</td><td>${claim.amount.toLocaleString()} ₪</td>`;
+                tbody.appendChild(tr);
+            }
+            const tot = document.createElement('tr');
+            tot.style.cssText = 'font-weight:bold; border-top:2px solid var(--primary);';
+            tot.innerHTML = `<td>סה"כ</td><td>${calcResult.calculations.total.toLocaleString()} ₪</td>`;
+            tbody.appendChild(tot);
+
+            document.getElementById('dl-result').style.display = 'block';
+
+        } catch (e) {
+            document.getElementById('dl-loading').classList.remove('active');
+            document.getElementById('dl-generate-area').style.display = 'block';
+            alert('שגיאה: ' + e.message);
+        }
+    }
+
+    async function downloadDemandLetter() {
+        if (!dlLastData) return;
+        const btn = document.getElementById('dl-download-btn');
+        const loadingEl = document.getElementById('dl-download-loading');
+        btn.disabled = true;
+        loadingEl.style.display = 'block';
+
+        try {
+            const resp = await fetch('/generate-demand-letter', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(dlLastData),
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                alert('שגיאה: ' + (err.error || resp.status));
+                return;
+            }
+            const blob = await resp.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `מכתב_התראה_${dlLastData.plaintiff_name || 'demand'}.docx`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            alert('שגיאה: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            loadingEl.style.display = 'none';
+        }
+    }
+
+    function switchToFullClaim() {
+        saveDLDataToStorage();
+        window.location.href = '/?restore=1';
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('restore') === '1') {
+            loadFromStorage();
+        }
+    });
+</script>
+</body>
+</html>
