@@ -124,11 +124,14 @@
         }
         .hero-main-buttons {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(2, 1fr);
             gap: 1rem;
             margin-bottom: 1rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
         }
-        @media(max-width:700px) { .hero-main-buttons { grid-template-columns: 1fr; } }
+        @media(max-width:500px) { .hero-main-buttons { grid-template-columns: 1fr; } }
         .hero-btn {
             display: flex;
             flex-direction: column;
@@ -172,6 +175,33 @@
             transition: all 0.2s;
         }
         .hero-secondary-btn:hover { background: rgba(255,255,255,0.28); color: white; }
+
+        /* Method selection modal */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.55); z-index: 1000;
+            align-items: center; justify-content: center;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal-box {
+            background: white; border-radius: 18px; padding: 2.4rem 2rem;
+            max-width: 480px; width: 90%; text-align: center;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+        }
+        .modal-box h3 { color: var(--primary); font-size: 1.25rem; margin-bottom: 0.5rem; }
+        .modal-box p { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 1.6rem; }
+        .method-btn {
+            display: flex; align-items: center; gap: 0.9rem;
+            width: 100%; padding: 1rem 1.3rem; border-radius: 12px; border: 2px solid var(--border);
+            background: white; cursor: pointer; font-family: inherit; text-align: right;
+            transition: all 0.2s; margin-bottom: 0.8rem;
+        }
+        .method-btn:hover { border-color: var(--primary); background: #f0f4f8; }
+        .method-btn .m-icon { font-size: 1.8rem; flex-shrink: 0; }
+        .method-btn .m-text .m-title { font-weight: 700; font-size: 1rem; color: var(--primary); }
+        .method-btn .m-text .m-desc { font-size: 0.82rem; color: var(--text-muted); margin-top: 0.1rem; }
+        .modal-cancel { margin-top: 0.4rem; color: var(--text-muted); font-size: 0.88rem; cursor: pointer; background: none; border: none; font-family: inherit; }
+        .modal-cancel:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -193,21 +223,16 @@
     <div class="action-hero">
         <h2>מה תרצה לעשות היום?</h2>
         <div class="hero-main-buttons">
-            <a href="/demand-letter" class="hero-btn hero-btn-gold">
+            <button onclick="showMethodModal('demand')" class="hero-btn hero-btn-gold" style="cursor:pointer;">
                 <span class="btn-icon">📨</span>
                 <span class="btn-title">מכתב התראה</span>
                 <span class="btn-desc">דרישה לפני הגשת תביעה</span>
-            </a>
-            <a href="/" class="hero-btn hero-btn-blue">
+            </button>
+            <button onclick="showMethodModal('claim')" class="hero-btn hero-btn-blue" style="cursor:pointer;">
                 <span class="btn-icon">⚖️</span>
                 <span class="btn-title">כתב תביעה</span>
                 <span class="btn-desc">הגשה לבית הדין לעבודה</span>
-            </a>
-            <a href="/?start=upload" class="hero-btn hero-btn-green">
-                <span class="btn-icon">📂</span>
-                <span class="btn-title">העלאת מסמכי לקוח</span>
-                <span class="btn-desc">מילוי אוטומטי מהמסמכים</span>
-            </a>
+            </button>
         </div>
         <div class="hero-secondary-buttons">
             <a href="/dashboard" class="hero-secondary-btn">📋 לוח תיקים</a>
@@ -309,5 +334,58 @@
 
 
 </div>
+
+<!-- Method selection modal -->
+<div class="modal-overlay" id="method-modal" onclick="closeMethodModal(event)">
+    <div class="modal-box">
+        <h3 id="modal-title">כיצד תרצה למלא את הפרטים?</h3>
+        <p id="modal-subtitle">בחר את שיטת מילוי הטופס</p>
+        <button class="method-btn" onclick="chooseMethod('upload')">
+            <span class="m-icon">📂</span>
+            <div class="m-text">
+                <div class="m-title">העלאת מסמכים — מילוי אוטומטי</div>
+                <div class="m-desc">העלה תלושי שכר, מכתב פיטורים ועוד — ה-AI יחלץ את הנתונים</div>
+            </div>
+        </button>
+        <button class="method-btn" onclick="chooseMethod('manual')">
+            <span class="m-icon">✍️</span>
+            <div class="m-text">
+                <div class="m-title">מילוי ידני</div>
+                <div class="m-desc">מלא את הטופס ישירות ללא העלאת מסמכים</div>
+            </div>
+        </button>
+        <button class="modal-cancel" onclick="closeMethodModal()">ביטול</button>
+    </div>
+</div>
+
+<script>
+    var _selectedFlow = null;
+
+    function showMethodModal(flow) {
+        _selectedFlow = flow;
+        var titles = { demand: 'מכתב התראה — כיצד תרצה למלא?', claim: 'כתב תביעה — כיצד תרצה למלא?' };
+        document.getElementById('modal-title').textContent = titles[flow] || 'כיצד תרצה למלא את הפרטים?';
+        document.getElementById('method-modal').classList.add('open');
+    }
+
+    function closeMethodModal(e) {
+        if (!e || e.target === document.getElementById('method-modal')) {
+            document.getElementById('method-modal').classList.remove('open');
+        }
+    }
+
+    function chooseMethod(method) {
+        document.getElementById('method-modal').classList.remove('open');
+        if (method === 'upload') {
+            window.location.href = '/?start=upload&flow=' + _selectedFlow;
+        } else {
+            if (_selectedFlow === 'demand') {
+                window.location.href = '/demand-letter';
+            } else {
+                window.location.href = '/';
+            }
+        }
+    }
+</script>
 </body>
 </html>

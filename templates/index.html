@@ -1521,9 +1521,16 @@
 
     function confirmExtraction() {
         applyExtractedData();
-        // Show "what to create?" choice instead of going straight to step 1
         document.getElementById('upload-zone-wrapper').style.display = 'none';
         document.getElementById('extraction-results').style.display = 'none';
+
+        // If flow was pre-selected via URL (?flow=demand/claim), skip the choice screen
+        if (window._preSelectedFlow) {
+            chooseFlowAfterUpload(window._preSelectedFlow);
+            return;
+        }
+
+        // Show "what to create?" choice
         const choicePanel = document.getElementById('post-upload-choice');
         if (choicePanel) {
             choicePanel.style.display = 'block';
@@ -2559,6 +2566,12 @@
         // Auto-show upload area if ?start=upload
         if (params.get('start') === 'upload') {
             document.getElementById('upload-area').style.display = 'block';
+        }
+
+        // Store pre-selected flow (demand / claim) from URL so post-upload we auto-route
+        const urlFlow = params.get('flow');
+        if (urlFlow) {
+            window._preSelectedFlow = urlFlow;
         }
     });
 </script>
